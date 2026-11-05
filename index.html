@@ -464,6 +464,22 @@ function overlap(a, b){
   let n = 0; s.forEach(x => { if (l.has(x)) n++; });
   return s.size ? n / s.size : 0;
 }
+// Spatial index for many rectangles: each ~500 m square lists the rectangles that cover it,
+// so a point only checks those instead of all of them (very large ones are always checked)
+function boxIndex(boxes){
+  const S = 0.005, cells = new Map(), big = [];
+  for (const b of boxes) {
+    const x0 = Math.floor(b.minlon / S), x1 = Math.floor(b.maxlon / S), y0 = Math.floor(b.minlat / S), y1 = Math.floor(b.maxlat / S);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) { big.push(b); continue; }
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const k = x * 100000 + y;
+      if (!cells.has(k)) cells.set(k, []);
+      cells.get(k).push(b);
+    }
+  }
+  const inside = (p, b) => p[0] >= b.minlat && p[0] <= b.maxlat && p[1] >= b.minlon && p[1] <= b.maxlon;
+  return p => (cells.get(Math.floor(p[1] / S) * 100000 + Math.floor(p[0] / S)) || []).some(b => inside(p, b)) || big.some(b => inside(p, b));
+}
 function fairCenter(){
   const ms = state.members; if (!ms.length) return null;
   let p = {lat: ms.reduce((s,m)=>s+m.lat,0)/ms.length, lon: ms.reduce((s,m)=>s+m.lon,0)/ms.length};
@@ -707,9 +723,8 @@ async function fetchCandidates(c, R, lo, hi){
   const {nodes, segs, routes, forests, places, urban, nature} = await hasData() ? await planDataTiles(c, R) : await planDataLive(c, R);
   const cands = [], seen = new Set();
   // Share of the route's points that lie inside any of the given map areas (bounding boxes)
-  const share = (pts, boxes) => pts.length
-    ? pts.filter(p => boxes.some(b => p[0] >= b.minlat && p[0] <= b.maxlat && p[1] >= b.minlon && p[1] <= b.maxlon)).length / pts.length
-    : 0;
+  const ix = new Map([[nature, boxIndex(nature)], [urban, boxIndex(urban)], [forests, boxIndex(forests)]]);
+  const share = (pts, boxes) => pts.length ? pts.filter(ix.get(boxes)).length / pts.length : 0;
   const addCand = (kind, name, start, len, pts, cells) => {
     // Same junctions in a different order are the same walk, so the key ignores start and order
     const key = kind + ':' + name.replace('Knooppunten ', '').split(' → ').sort().join('-');
