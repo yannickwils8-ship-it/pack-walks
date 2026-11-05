@@ -30,7 +30,7 @@ It also includes from **Agentschap Natuur en Bos**:
 
 The data is split into map squares of about 10 × 10 km, and the app only downloads the squares it needs. It's published with the website but not stored in the repository, so the repository stays small. Code changes go live in about a minute; a full data rebuild takes longer.
 
-If the data isn't available (for example when `index.html` is opened as a file on your computer), the app falls back to the live public map servers, which can be slow.
+When `index.html` is opened as a file on your computer, it uses the data published on the website, so it's just as fast and shows the off-leash zones too (it needs an internet connection). Only if neither copy can be reached does it fall back to the live public map servers, which can be slow.
 
 ## Online with GitHub Pages
 

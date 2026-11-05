@@ -564,25 +564,36 @@ function wxIcon(c){
 }
 
 // ---------- pre-built walk data (published with the site, rebuilt every week) ----------
-// When it isn't there (e.g. the page opened as a local file), the app asks the live map servers instead
+// Uses the copy next to the page; when there is none (e.g. index.html opened from a folder) it uses the
+// published website's copy, and only without either does it ask the slower live map servers
 const QD = 100000;   // stored coordinates are integers of 1e-5 degree
-let dataIndexP = null, anbP = null;
+const DATA_SOURCES = ['data/', 'https://yannickwils8-ship-it.github.io/pack-walks/data/'];
+const NO_ANB = {zones:[], areas:[]};
+let dataIndexP = null, anbP = null, DATA = DATA_SOURCES[0];
 function dataIndex(){
-  if (!dataIndexP) dataIndexP = fetch('data/index.json')
-    .then(r => { if (!r.ok) throw new Error('No walk data'); return r.json(); })
-    .then(ix => ({...ix, pathSet:new Set(ix.paths), metaSet:new Set(ix.meta)}))
-    .catch(e => { dataIndexP = null; throw e; });
+  if (!dataIndexP) dataIndexP = (async () => {
+    for (const base of DATA_SOURCES) {
+      try {
+        const r = await fetch(base + 'index.json');
+        if (!r.ok) continue;
+        const ix = await r.json();
+        DATA = base;
+        return {...ix, pathSet:new Set(ix.paths), metaSet:new Set(ix.meta)};
+      } catch(e) {}
+    }
+    throw new Error('No walk data');
+  })().catch(e => { dataIndexP = null; throw e; });
   return dataIndexP;
 }
 const hasData = () => dataIndex().then(() => true, () => false);
 function anbData(){
-  if (!anbP) anbP = fetch('data/anb.json').then(r => r.ok ? r.json() : {zones:[], areas:[]}).catch(() => ({zones:[], areas:[]}));
+  if (!anbP) anbP = dataIndex().then(() => fetch(DATA + 'anb.json')).then(r => r.ok ? r.json() : NO_ANB).catch(() => NO_ANB);
   return anbP;
 }
 const tileCache = new Map();
 function tileJSON(kind, key){
   const id = kind + '/' + key;
-  if (!tileCache.has(id)) tileCache.set(id, fetch('data/' + id + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
+  if (!tileCache.has(id)) tileCache.set(id, fetch(DATA + id + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
   return tileCache.get(id);
 }
 // All tiles of one kind within R km of point S
