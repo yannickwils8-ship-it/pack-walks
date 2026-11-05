@@ -4,9 +4,12 @@
 //
 // Per option it reports:
 //   km / offTarget   length and difference from the asked distance
-//   pathPct          share on path, track, footway, bridleway, cycleway or steps
-//   streetPct        share on residential, service, unclassified, living street or pedestrian
-//   otherPct         share not on the walking graph (e.g. bigger roads used by marked routes)
+//   pathPct          share on path, track, bridleway, steps, or any unpaved way (the method's "path")
+//   streetPct        share on all other walkable ways, e.g. footway, residential, service ("small street")
+//   roadPct          share on tertiary, secondary, primary or trunk ("road")
+//   otherPct         share not on the walking graph (e.g. roads used by marked routes)
+//   unpavedPct       share known to be unpaved; pavedPct known paved (rest: surface unknown)
+//   sidewalkPct      share of streets and roads that have a sidewalk
 //   outAndBackPct    share within 20 m of a part already walked (more than 150 m from the start)
 //   junctionsTwice   points passed a second time (more than 150 m from the start)
 //   crossings        segments that cross between map points (rare: crossing paths share a point)
@@ -19,11 +22,16 @@ function measureOptions(){
   const xy = (p, o) => [(p[1] - o[1]) * 111.32 * Math.cos(o[0] * Math.PI / 180) * 1000, (p[0] - o[0]) * 111.32 * 1000];
   return cr.options.map(o => {
     const pts = o.pts, s0 = pts[0];
-    let len = 0, lp = 0, ls = 0, lu = 0;
+    let len = 0, lp = 0, ls = 0, lr = 0, lu = 0, unp = 0, pav = 0, side = 0, streetRoad = 0;
     for (let i = 1; i < pts.length; i++) {
       const d = km(P(pts[i - 1]), P(pts[i])); len += d;
       const e = (A.G.get(key(pts[i - 1])) || []).find(x => x.to === key(pts[i]));
-      if (!e) lu += d; else if (e.cost / e.len <= 1.5) lp += d; else ls += d;
+      if (!e) { lu += d; continue; }
+      const f = e.f || 0, unpaved = (f & 2) > 0;
+      if (f & 1) pav += d;
+      if (unpaved) unp += d;
+      if (/^(path|track|bridleway|steps)$/.test(e.hw) || unpaved) lp += d;
+      else { if (/^(trunk|primary|secondary|tertiary)$/.test(e.hw)) lr += d; else ls += d; streetRoad += d; if (f & 4) side += d; }
     }
     // Resampled every 10 m so the out-and-back share doesn't depend on how densely the map is drawn
     const rs = [];
@@ -63,14 +71,17 @@ function measureOptions(){
     });
     return {kind:o.kind, name:createdTitle(o).slice(0, 40), km:+len.toFixed(2),
       offTarget:Math.round((len - cr.ctx.L) / cr.ctx.L * 100) + '%',
-      pathPct:Math.round(lp / len * 100), streetPct:Math.round(ls / len * 100), otherPct:Math.round(lu / len * 100),
+      pathPct:Math.round(lp / len * 100), streetPct:Math.round(ls / len * 100), roadPct:Math.round(lr / len * 100), otherPct:Math.round(lu / len * 100),
+      unpavedPct:Math.round(unp / len * 100), pavedPct:Math.round(pav / len * 100), sidewalkPct:streetRoad ? Math.round(side / streetRoad * 100) : 0,
       outAndBackPct:Math.round(back / rs.length * 100), junctionsTwice:twice, crossings:cross,
       compact:+(4 * Math.PI * Math.abs(ar / 2) / Math.pow(len * 1000, 2)).toFixed(2),
       startToParkingM:Math.round(km(P(s0), S) * 1000)};
   });
 }
 
-async function runCase(label, setup, kmTarget){
+// Each case and run gets its own fixed seed, so before/after comparisons use the same random choices
+async function runCase(label, setup, kmTarget, seed){
+  if (seed != null && typeof seedRandom === 'function') seedRandom(seed);
   cr.km = kmTarget; cr.current = null; cr.options = []; setup(); setView('create');
   const t0 = performance.now();
   await createLoop();
@@ -86,7 +97,7 @@ async function runAllCases(runs = 2){
     ['D urban 10 km (Laeken)', () => { cr.mode = 'point'; cr.point = {lat:50.8881, lon:4.3508}; cr.pointName = 'Laeken'; }, 10],
   ];
   const out = [];
-  for (let run = 1; run <= runs; run++) for (const [l, f, k] of cases) out.push({run, ...(await runCase(l, f, k))});
+  for (let run = 1; run <= runs; run++) for (const [i, [l, f, k]] of cases.entries()) out.push({run, ...(await runCase(l, f, k, 1000 + 10 * i + run))});
   console.table(out.flatMap(c => c.options.map(o => ({run:c.run, case:c.label, secs:c.secs, ...o}))));
   return out;
 }

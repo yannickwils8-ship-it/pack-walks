@@ -458,8 +458,14 @@ function km(a, b){
 const P = p => ({lat:p[0], lon:p[1]});
 const lineKm = pts => pts.reduce((s, p, i) => i ? s + km(P(pts[i-1]), P(p)) : 0, 0);
 const d2 = (a, b) => (a[0]-b[0])**2 + ((a[1]-b[1])*0.64)**2;
+// The random choices in route making go through rand(), so tests can make them repeatable with seedRandom(n)
+let rand = Math.random;
+function seedRandom(seed){
+  let a = seed >>> 0;
+  rand = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 function shuffle(a){
-  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
 // A route's footprint as a set of ~250 m squares, to measure how much two walks share
@@ -685,7 +691,7 @@ function findLoops(g, startId, minKm, maxKm){
     }
   })(startId, 0);
   const target = (minKm + maxKm)/2;
-  return [...res.values()].map(l => ({...l, r: Math.abs(l.len - target)/target + Math.random()*0.2})).sort((a, b) => a.r - b.r);
+  return [...res.values()].map(l => ({...l, r: Math.abs(l.len - target)/target + rand()*0.2})).sort((a, b) => a.r - b.r);
 }
 function loopPointsG(g, l){
   let pts = [];
@@ -842,7 +848,7 @@ async function planWalk(date, cands, target, cap, ctx){
   // Pick among the best four with a weighted chance, so planning again gives different walks
   safe.sort((a, b) => b.s - a.s);
   const pool = safe.slice(0, 4), weights = pool.map(x => Math.exp((x.s - pool[0].s) / 30));
-  let r = Math.random() * weights.reduce((a, b) => a + b, 0), best = pool[0];
+  let r = rand() * weights.reduce((a, b) => a + b, 0), best = pool[0];
   for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) { best = pool[i]; break; } }
 
   const c = best.c;
@@ -1445,12 +1451,15 @@ const WIDE_WAY = /^(track|bridleway|service|unclassified|pedestrian)$/;   // roo
 async function loadAreaTiles(S, R){
   const [paths, meta, anb, ix] = await Promise.all([loadTiles('paths', S, R), loadTiles('meta', S, R), anbData(), dataIndex()]);
   const coords = new Map(), G = new Map(), trail = new Set(), seen = new Set();
-  const link = (a, b, len, cost, eid, wide) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid, wide}); };
+  const link = (a, b, len, cost, eid, wide, hw, f) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid, wide, hw, f}); };
+  // Data version 2 stores per way: type, flags (paved, unpaved, sidewalk, difficult, lead), then the shape
+  const first = (ix.v || 1) >= 2 ? 2 : 1;
   // Ways from neighbouring tiles overlap; points with the same coordinates are the same junction
   for (const t of paths) for (const w of t.w) {
-    const hw = ix.walk[w[0]], wt = PATH_WEIGHT[hw] || 2.5, wide = WIDE_WAY.test(hw);
+    const hw = ix.walk[w[0]], wt = PATH_WEIGHT[hw], f = first === 2 ? w[1] : 0, wide = WIDE_WAY.test(hw);
+    if (!wt) continue;   // way types without a cost yet (bigger roads) stay out of the walking graph
     let la = 0, lo = 0, prev = null;
-    for (let i = 1; i < w.length; i += 2) {
+    for (let i = first; i < w.length; i += 2) {
       la += w[i]; lo += w[i + 1];
       const id = la * 1e6 + lo;
       if (!coords.has(id)) coords.set(id, [la / QD, lo / QD]);
@@ -1459,7 +1468,7 @@ async function loadAreaTiles(S, R){
         if (!seen.has(eid)) {
           seen.add(eid);
           const len = km(P(coords.get(prev)), P(coords.get(id)));
-          link(prev, id, len, len * wt, eid, wide); link(id, prev, len, len * wt, eid, wide);
+          link(prev, id, len, len * wt, eid, wide, hw, f); link(id, prev, len, len * wt, eid, wide, hw, f);
           if (wt <= 1.3) { trail.add(prev); trail.add(id); }
         }
       }
@@ -1605,7 +1614,7 @@ const OPT_COLORS = ['#d9480f', '#1c7ed6', '#7048e8'];
 const KIND_LABEL = {route:'Official route', loop:'Knooppunten loop', trail:'Trail loop'};
 function trailOption(c){
   for (let tries = 0; tries < 3; tries++) {
-    const t = buildTrailLoop(c.area, c.origin, c.L, c.bearing + (Math.random() * 2 - 1) * c.spread);
+    const t = buildTrailLoop(c.area, c.origin, c.L, c.bearing + (rand() * 2 - 1) * c.spread);
     if (t) return {kind:'trail', name:'Trail loop', start:t.start, len:t.len, pts:t.pts, wide:t.wide};
   }
   return null;
@@ -1661,7 +1670,7 @@ async function createLoop(){
   if (cr.mode === 'point' && !cr.point) return toast('Choose a start point on the map first.', true);
   cr.busy = true; $('#createBtn').disabled = true;
   try {
-    let origin, place = null, bearing = Math.random() * 360, spread = 180, outline = null;
+    let origin, place = null, bearing = rand() * 360, spread = 180, outline = null;
     if (cr.mode === 'area') {
       // Natuur en Bos areas come with their own position and outline; other names are looked up
       const anbArea = q.startsWith('anb:') ? (await anbData()).areas[+q.slice(4)] : null;
