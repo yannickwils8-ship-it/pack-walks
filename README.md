@@ -98,14 +98,22 @@ Make a loop yourself, for any day.
 3. Set the **distance** with the slider (3–15 km).
 4. Press **Create loop**. This takes from a few seconds to about a minute, depending on how busy the public map servers are.
 
-How the loop is made:
+You always get **three options**, each with its own colour on the map (orange, blue, purple). They come from:
 
-- For a nature area, the walk starts at the nearest parking and heads into the area.
-- The app first looks for a **signposted knooppunten loop** of about the right length. The numbered junctions to follow are shown.
-- If there is none, it builds a **trail loop** along paths and forest tracks, using roads only to connect them. Trail loops aren't signposted, so follow them on your phone or download the GPX.
-- Every route is a loop that ends where it starts. The length is usually within about 10% of what you asked.
+- **Official routes:** marked regional and local walking routes that come back to their start, starting at the point closest to where you chose. Follow their signs.
+- **Knooppunten loops:** signposted loops on the numbered junction network, with the junctions to follow.
+- **Trail loops:** built along paths and forest tracks, using roads only to connect them. They aren't signposted, so follow them on your phone or download the GPX.
 
-On the result you can choose **Another route**, see it on the map, get directions, download the GPX, share it on WhatsApp, or **Add walk** to the group calendar on a date. A walk added by hand replaces any walk already planned that day, and **Plan walks** leaves it in place. If the forecast for that day shows gusts above the cancel limit, the app won't add it.
+Each option shows its length and walking time, and whether it **matches your distance** or is shorter or longer. If no route of the exact distance exists there, the app says so and shows the three closest alternatives. **Show 3 more** gives three different routes from the same place.
+
+**Dog-friendly information**, for walking with a big group of dogs:
+
+- Paths where dogs are banned are left out of trail loops. Official and knooppunten routes that cross a no-dog area are labelled and ranked last.
+- On the map: **off-leash zones** in green, **lead-only** areas with an orange dashed edge, **no-dog** areas and paths in red, and **drinking water** as blue dots.
+- Each option is labelled when it passes an off-leash zone, needs a lead on part of the way, passes water points, or runs mostly on wide tracks (easier with 5–10 dogs).
+- This information comes from OpenStreetMap and isn't complete everywhere, so always check the signs at the entrance.
+
+Select an option to see it on the map, get directions, download the GPX, share it on WhatsApp, or **Add walk** to the group calendar on a date. A walk added by hand replaces any walk already planned that day, and **Plan walks** leaves it in place. If the forecast for that day shows gusts above the cancel limit, the app won't add it.
 
 ## Group
 

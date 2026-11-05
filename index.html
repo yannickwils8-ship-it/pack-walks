@@ -225,6 +225,22 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
 .inline .btn{flex:none}
 .add-box{background:var(--surface-2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .mapwrap.picking #map{cursor:crosshair}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start;width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;text-align:left}
+.opt:hover{border-color:var(--accent)}
+.opt.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.opt-num{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:#fff;font:700 14px var(--display)}
+.opt-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.opt-main b{font-size:15px}
+.opt-sub{font-size:13px;color:var(--muted)}
+.chip.good{background:var(--yes-soft);color:var(--yes);border-color:transparent}
+.chip.warn{background:var(--maybe-soft);color:var(--maybe);border-color:transparent}
+.chip.bad{background:var(--no-soft);color:var(--no);border-color:transparent}
+.notice{padding:12px 14px;border-radius:12px;background:var(--maybe-soft);color:var(--ink);font-size:14px}
+.lg-off{width:12px;height:12px;border-radius:3px;background:#40c057;border:1.5px solid #2b8a3e}
+.lg-lead{width:12px;height:12px;border-radius:3px;border:1.5px dashed #e8a33d}
+.lg-ban{width:12px;height:12px;border-radius:3px;background:rgba(224,49,49,.35);border:1.5px solid #e03131}
+.lg-water{width:10px;height:10px;border-radius:50%;background:#1c7ed6;border:2px solid #fff;box-shadow:0 0 0 1px #1c7ed6}
 
 /* ---------- map ---------- */
 .legend{position:absolute;left:12px;bottom:24px;z-index:500;display:flex;gap:12px;flex-wrap:wrap;background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
@@ -383,7 +399,7 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
   <div class="mapwrap">
     <div id="map"></div>
     <button class="btn small map-fit" id="fitBtn">Show whole group</button>
-    <div class="legend"><span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span></div>
+    <div class="legend" id="legend"><span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span></div>
   </div>
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
@@ -873,6 +889,7 @@ function selectedWalk(){
 }
 function renderMap(){
   homeLayer.clearLayers(); walkLayer.clearLayers();
+  $('#legend').innerHTML = lastContent === 'create' ? LEGEND_CREATE : LEGEND_PLAN;
   state.members.forEach(m => {
     const icon = L.divIcon({className:'home-pin' + (m.id === state.me ? ' me' : ''),
       html:`<span style="--h:${hue(m.id)}">${esc(initials(m.name))}</span>`, iconSize:[30,30], iconAnchor:[15,15]});
@@ -1217,9 +1234,9 @@ const DOMAINS = [
   ['Flanders', ['Kalmthoutse Heide', 'Zoerselbos', 'Nationaal Park Hoge Kempen', 'Bokrijk', 'Wijnendalebos', 'Vloethemveld', 'Kluisbos', "Bos t'Ename"]],
   ['Wallonia', ['Hautes Fagnes', "Forêt d'Anlier", 'Hertogenwald', 'Bois de la Houssière']],
 ];
-const cr = {mode:'area', point:null, km:state.settings.createKm || 6, ctx:null, variants:[], idx:0, current:null, busy:false};
+const cr = {mode:'area', point:null, km:state.settings.createKm || 6, ctx:null, pool:[], shown:[], options:[], sel:0, current:null, busy:false};
 // Cost per km by path type: trails and forest tracks are cheapest, quiet roads only to connect them
-const PATH_WEIGHT = {path:1, footway:1, track:1, bridleway:1, steps:1.5, cycleway:1.3, pedestrian:1.6, living_street:1.8, service:2.5, unclassified:2.5, residential:2.5};
+const PATH_WEIGHT = {path:1, footway:1, track:0.9, bridleway:0.95, steps:1.5, cycleway:1.3, pedestrian:1.6, living_street:1.8, service:2.5, unclassified:2.5, residential:2.5};
 
 class MinHeap {
   constructor(){ this.k = []; this.v = []; }
@@ -1266,39 +1283,101 @@ async function nearestParking(p){
   const list = d.elements.map(e => ({lat:e.lat ?? e.center?.lat, lon:e.lon ?? e.center?.lon})).filter(x => x.lat);
   return list.sort((a, b) => km(a, p) - km(b, p))[0] || null;
 }
-// Walkable ways, knooppunten and the links between them, around a start point (radius R in km)
+// ---------- dog-friendliness of a route ----------
+function pip(pt, ring){
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [yi, xi] = ring[i], [yj, xj] = ring[j];
+    if ((yi > pt[0]) !== (yj > pt[0]) && pt[1] < (xj - xi) * (pt[0] - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// Closed outlines are tested exactly; areas made of loose pieces fall back to their bounding box
+const inArea = (pt, a) => a.closed ? a.rings.some(r => pip(pt, r))
+  : pt[0] >= a.bb[0] && pt[0] <= a.bb[2] && pt[1] >= a.bb[1] && pt[1] <= a.bb[3];
+const fineCell = p => Math.round(p[0] / 0.0004) + ':' + Math.round(p[1] / 0.0006);   // ~45 m squares
+function dogInfo(pts, dog){
+  const sample = pts.filter((_, i) => i % 3 === 0 || i === pts.length - 1);
+  const touches = a => a.point ? sample.some(p => km(P(p), P(a.point)) < 0.15) : sample.some(p => inArea(p, a));
+  return {
+    offLeash: dog.off.some(touches),
+    leash: dog.leash.some(touches),
+    banned: dog.ban.some(touches) || sample.filter(p => dog.banCells.has(fineCell(p))).length >= 3,
+    water: dog.water.filter(w => sample.some(p => km(P(p), P(w)) < 0.1)).length,
+  };
+}
+
+// Walkable ways (leaving out paths where dogs are banned), knooppunten, official walking routes and
+// dog-related places (off-leash zones, lead-only and no-dog areas, drinking water) around a start point
 async function loadArea(S, R){
   const a = `(around:${Math.round(R * 1000)},${S.lat.toFixed(5)},${S.lon.toFixed(5)})`;
+  // Route shapes are clipped to the search area, so long routes passing through stay small
+  const sw = offset(S, R * 1.42, 225), ne = offset(S, R * 1.42, 45);
+  const clip = `(${sw.lat.toFixed(5)},${sw.lon.toFixed(5)},${ne.lat.toFixed(5)},${ne.lon.toFixed(5)})`;
   const data = await overpass(`[out:json][timeout:120];
-    way["highway"~"^(path|footway|track|bridleway|steps|cycleway|pedestrian|living_street|service|unclassified|residential)$"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["area"!="yes"]${a}->.w;
+    way["highway"~"^(path|footway|track|bridleway|steps|cycleway|pedestrian|living_street|service|unclassified|residential)$"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["dog"!="no"]["area"!="yes"]${a}->.w;
     .w out body qt;
     node(w.w);
     out skel qt;
     node["rwn_ref"]${a};
     out qt;
     relation["network:type"="node_network"]${a};
-    out geom qt;`, 60000);
-  const coords = new Map(), G = new Map(), trail = new Set(), kps = [], segs = [], ways = [];
+    out geom${clip} qt;
+    relation["route"~"^(hiking|foot|walking)$"]["network:type"!="node_network"]["network"!~"^(iwn|nwn)$"]${a};
+    out geom${clip} qt;
+    (
+      nwr["leisure"="dog_park"]${a};
+      wr["dog"~"^(unleashed|leashed|no)$"]["highway"!~"."]${a};
+      way["highway"]["dog"="no"]${a};
+    );
+    out geom qt;
+    node["amenity"="drinking_water"]${a};
+    out qt;`, 60000);
+  const coords = new Map(), G = new Map(), trail = new Set(), kps = [], segs = [], routes = [], ways = [];
+  const dog = {off:[], leash:[], ban:[], banLines:[], banCells:new Set(), water:[]};
+  const line = g => g.filter(Boolean).map(p => [p.lat, p.lon]);
+  const addArea = (tg, rings) => {
+    if (!rings.length) return;
+    const all = rings.flat(), closed = rings.every(r => r.length > 3 && d2(r[0], r.at(-1)) < 1e-10);
+    const area = {rings, closed, name:tg.name, bb:[Math.min(...all.map(p => p[0])), Math.min(...all.map(p => p[1])), Math.max(...all.map(p => p[0])), Math.max(...all.map(p => p[1]))]};
+    if (tg.leisure === 'dog_park' || tg.dog === 'unleashed') dog.off.push(area);
+    else if (tg.dog === 'leashed') dog.leash.push(area);
+    else if (tg.dog === 'no') dog.ban.push(area);
+  };
   for (const e of data.elements) {
-    if (e.type === 'node') { coords.set(e.id, [e.lat, e.lon]); if (e.tags?.rwn_ref) kps.push({id:e.id, ref:e.tags.rwn_ref, lat:e.lat, lon:e.lon}); }
-    else if (e.type === 'way' && e.nodes) ways.push(e);
+    const tg = e.tags || {};
+    if (e.type === 'node') {
+      coords.set(e.id, [e.lat, e.lon]);
+      if (tg.rwn_ref) kps.push({id:e.id, ref:tg.rwn_ref, lat:e.lat, lon:e.lon});
+      if (tg.amenity === 'drinking_water') dog.water.push([e.lat, e.lon]);
+      if (tg.leisure === 'dog_park') dog.off.push({point:[e.lat, e.lon], name:tg.name});
+    } else if (e.type === 'way' && e.geometry) {
+      // Dog places come with their shape; walkable ways come as lists of nodes
+      if (tg.highway) { const l = line(e.geometry); dog.banLines.push(l); l.forEach(p => dog.banCells.add(fineCell(p))); }
+      else addArea(tg, [line(e.geometry)]);
+    } else if (e.type === 'way' && e.nodes) ways.push(e);
     else if (e.type === 'relation') {
-      const ws = (e.members || []).filter(m => m.type === 'way' && m.geometry?.length > 1).map(m => m.geometry.map(p => [p.lat, p.lon]));
-      if (ws.length) segs.push({id:e.id, ways:ws, len:ws.reduce((x, w) => x + lineKm(w), 0)});
+      const mem = (e.members || []).filter(m => m.type === 'way' && m.geometry?.length > 1);
+      const ws = mem.map(m => line(m.geometry));
+      if (!ws.length) continue;
+      if (tg['network:type'] === 'node_network') segs.push({id:e.id, ways:ws, len:ws.reduce((x, w) => x + lineKm(w), 0)});
+      else if (tg.route) routes.push({name:tg.name || tg.ref || 'Marked walking route', ways:ws});
+      else addArea(tg, mem.filter(m => m.role !== 'inner').map(m => line(m.geometry)));
     }
   }
-  const link = (a, b, len, cost, eid) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid}); };
+  const WIDE = /^(track|bridleway|service|unclassified|pedestrian)$/;   // room for a group with dogs
+  const link = (a, b, len, cost, eid, wide) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid, wide}); };
   for (const w of ways) {
-    const wt = PATH_WEIGHT[w.tags?.highway] || 2.5;
+    const hw = w.tags?.highway || '', wt = PATH_WEIGHT[hw] || 2.5, wide = WIDE.test(hw);
     for (let i = 1; i < w.nodes.length; i++) {
       const a = w.nodes[i - 1], b = w.nodes[i], pa = coords.get(a), pb = coords.get(b);
       if (!pa || !pb) continue;
       const len = km(P(pa), P(pb)), eid = a < b ? a + '-' + b : b + '-' + a;
-      link(a, b, len, len * wt, eid); link(b, a, len, len * wt, eid);
+      link(a, b, len, len * wt, eid, wide); link(b, a, len, len * wt, eid, wide);
       if (wt <= 1.3) { trail.add(a); trail.add(b); }
     }
   }
-  return {coords, G, trail, kps, segs};
+  return {coords, G, trail, kps, segs, routes, dog};
 }
 function nearestNode(area, p, trailOnly){
   const pool = trailOnly && area.trail.size ? area.trail : area.G.keys(), q = [p.lat, p.lon];
@@ -1331,46 +1410,76 @@ function buildTrailLoop(area, S, L, bearing){
   if (startId == null) return null;
   const sc = area.coords.get(startId), s = {lat:sc[0], lon:sc[1]};
   let r = L / (2 * Math.PI * 1.25), best = null;
-  for (let it = 0; it < 6; it++) {
+  for (let it = 0; it < 5; it++) {
     const C = offset(s, r, bearing);
     const seq = [startId, ...[1, 2, 3].map(k => nearestNode(area, offset(C, r, bearing + 180 + k * 90), true)), startId];
     const used = new Set(), nodes = [startId];
-    let len = 0, reused = 0, ok = true;
+    let len = 0, reused = 0, wide = 0, ok = true;
     for (let i = 1; i < seq.length; i++) {
       const res = dijkstra(area.G, seq[i - 1], seq[i], used);
       if (!res) { ok = false; break; }
-      res.edges.forEach(e => { if (used.has(e.eid)) reused += e.len; used.add(e.eid); len += e.len; });
+      res.edges.forEach(e => { if (used.has(e.eid)) reused += e.len; if (e.wide) wide += e.len; used.add(e.eid); len += e.len; });
       nodes.push(...res.nodes.slice(1));
     }
     if (!ok || len < 0.5) break;
-    const cand = {start:s, len, pts:nodes.map(id => area.coords.get(id)), score:Math.abs(len - L) / L + reused / len};
+    const cand = {start:s, len, wide:wide / len, pts:nodes.map(id => area.coords.get(id)), score:Math.abs(len - L) / L + reused / len};
     if (!best || cand.score < best.score) best = cand;
     if (Math.abs(len - L) / L < 0.05) break;
     r *= Math.max(0.5, Math.min(1.8, L / len));
   }
   return best;
 }
-// Signposted loops on the knooppunten network, starting from junctions near the start point
-function knooppuntenVariants(area, S, L){
-  if (!area.kps.length || !area.segs.length) return [];
-  const g = buildGraph(area.kps, area.segs), out = [], taken = [];
-  const starts = area.kps.filter(n => g.adj.get(n.id)?.length && km(n, S) < 2).sort((a, b) => km(a, S) - km(b, S)).slice(0, 5);
-  for (const n of starts) for (const l of findLoops(g, n.id, L * 0.88, L * 1.12).slice(0, 10)) {
-    const pts = loopPointsG(g, l), cells = cellsOf(pts);
-    if (taken.some(t => overlap(t, cells) > 0.6)) continue;
-    taken.push(cells);
-    out.push({kind:'loop', name:'Knooppunten ' + loopRefsG(g, l, n.id), start:{lat:n.lat, lon:n.lon}, len:l.len, pts});
-    if (out.length >= 4) return out;
-  }
-  return out;
-}
-function trailVariant(){
-  const c = cr.ctx;
+// ---------- three options per place ----------
+const OPT_COLORS = ['#d9480f', '#1c7ed6', '#7048e8'];
+const KIND_LABEL = {route:'Official route', loop:'Knooppunten loop', trail:'Trail loop'};
+function trailOption(c){
   for (let tries = 0; tries < 3; tries++) {
     const t = buildTrailLoop(c.area, c.origin, c.L, c.bearing + (Math.random() * 2 - 1) * c.spread);
-    if (t) return {kind:'trail', name:'Trail loop', place:c.place, start:t.start, len:t.len, pts:t.pts};
+    if (t) return {kind:'trail', name:'Trail loop', start:t.start, len:t.len, pts:t.pts, wide:t.wide};
   }
   return null;
+}
+// Everything walkable from here: official marked routes that loop, knooppunten loops (also somewhat
+// shorter or longer than asked, as alternatives) and trail loops heading out in different directions
+function gatherOptions(c){
+  const {area, origin, L} = c, pool = [], o = [origin.lat, origin.lon];
+  for (const r of area.routes) {
+    const pts = chainWays(r.ways, r.ways[0][0]);
+    if (km(P(pts[0]), P(pts.at(-1))) > 0.4) continue;   // only routes that come back to their start
+    const len = lineKm(pts);
+    if (len < 2 || len > 30) continue;
+    // Start where the route passes closest to the chosen place
+    let bi = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = d2(p, o); if (d < bd) { bd = d; bi = i; } });
+    if (km(P(pts[bi]), origin) > 2) continue;
+    const rot = [...pts.slice(bi), ...pts.slice(1, bi + 1)];
+    pool.push({kind:'route', name:r.name, start:{lat:rot[0][0], lon:rot[0][1]}, len, pts:rot});
+  }
+  if (area.kps.length && area.segs.length) {
+    const g = buildGraph(area.kps, area.segs);
+    const starts = area.kps.filter(n => g.adj.get(n.id)?.length && km(n, origin) < 2).sort((a, b) => km(a, origin) - km(b, origin)).slice(0, 5);
+    for (const n of starts) for (const l of findLoops(g, n.id, Math.max(2, L * 0.6), L * 1.5).slice(0, 12))
+      pool.push({kind:'loop', name:'Knooppunten ' + loopRefsG(g, l, n.id), start:{lat:n.lat, lon:n.lon}, len:l.len, pts:loopPointsG(g, l)});
+  }
+  for (let i = 0; i < 4; i++) { const t = trailOption(c); if (t) pool.push(t); }
+  return pool;
+}
+// The best three that differ from each other and from options shown before: closest to the distance,
+// signposted routes first, places where dogs are banned last
+function pickOptions(c, pool, shown){
+  pool.forEach(v => {
+    v.place = c.place; v.cells = v.cells || cellsOf(v.pts);
+    v.dog = v.dog || dogInfo(v.pts, c.area.dog); v.diff = (v.len - c.L) / c.L;
+  });
+  const rank = v => Math.abs(v.diff) * 100 - (v.kind === 'route' ? 10 : v.kind === 'loop' ? 6 : 0)
+    + (v.dog.banned ? 200 : 0) - (v.dog.offLeash ? 4 : 0) - (v.wide || 0) * 4;
+  const out = [];
+  for (const v of pool.filter(v => !shown.includes(v)).sort((a, b) => rank(a) - rank(b))) {
+    if ([...out, ...shown].some(x => overlap(x.cells, v.cells) > 0.6)) continue;
+    out.push(v);
+    if (out.length === 3) break;
+  }
+  return out;
 }
 const cStatus = t => { const el = $('#createStatus'); el.hidden = !t; el.textContent = t || ''; };
 async function createLoop(){
@@ -1395,13 +1504,14 @@ async function createLoop(){
     const r0 = L / (2 * Math.PI * 1.25);
     cStatus('Loading paths, tracks and knooppunten around the start…');
     const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
-    cStatus(`Building loops of about ${fmtKm(L)}…`);
+    cStatus(`Building routes of about ${fmtKm(L)}…`);
     await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
     cr.ctx = {area, origin, place, bearing, spread, L};
-    cr.variants = knooppuntenVariants(area, origin, L).map(v => ({...v, place}));
-    if (!cr.variants.length) { const t = trailVariant(); if (t) cr.variants.push(t); }
-    if (!cr.variants.length) throw new Error(`No loop of about ${fmtKm(L)} found here. Try another distance or start point.`);
-    cr.idx = 0; cr.current = cr.variants[0];
+    cr.pool = gatherOptions(cr.ctx);
+    cr.shown = [];
+    cr.options = pickOptions(cr.ctx, cr.pool, cr.shown);
+    if (!cr.options.length) throw new Error('No walkable loop found here. Try another start point.');
+    cr.shown.push(...cr.options); cr.sel = 0; cr.current = cr.options[0];
     renderCreate(); renderMap(); fitCreate();
     $('#createResult').scrollIntoView({behavior:'smooth', block:'start'});
   } catch(err) {
@@ -1410,30 +1520,52 @@ async function createLoop(){
     cr.busy = false; $('#createBtn').disabled = false; cStatus('');
   }
 }
-function anotherRoute(){
-  const btn = $('#cAnother'); btn.disabled = true; btn.textContent = 'Finding…';
+function moreOptions(){
+  const btn = $('#cMore'); btn.disabled = true; btn.textContent = 'Finding…';
   setTimeout(() => {
-    cr.idx++;
-    if (cr.idx >= cr.variants.length) { const t = trailVariant(); if (t) cr.variants.push(t); }
-    if (cr.idx >= cr.variants.length) { cr.idx = 0; toast('No other loop found here; showing the first one again.'); }
-    cr.current = cr.variants[cr.idx];
+    for (let i = 0; i < 3; i++) { const t = trailOption(cr.ctx); if (t) cr.pool.push(t); }
+    const next = pickOptions(cr.ctx, cr.pool, cr.shown);
+    if (!next.length) { toast('No other routes found here.'); btn.disabled = false; btn.textContent = 'Show 3 more'; return; }
+    cr.options = next; cr.shown.push(...next); cr.sel = 0; cr.current = next[0];
     renderCreate(); renderMap(); fitCreate();
   }, 30);
 }
-function fitCreate(){
-  if (cr.current) map.fitBounds(L.latLngBounds(cr.current.pts).pad(0.25));
+function selectOption(i){ cr.sel = i; cr.current = cr.options[i]; renderCreate(); renderMap(); }
+function fitCreate(onlySelected){
+  const pts = onlySelected && cr.current ? cr.current.pts : cr.options.flatMap(v => v.pts);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
   else if (cr.point) map.setView([cr.point.lat, cr.point.lon], 14);
 }
+const LEGEND_PLAN = '<span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span>';
+const LEGEND_CREATE = `<span><i class="lg-route"></i>1</span><span><i class="lg-route" style="background:${OPT_COLORS[1]}"></i>2</span><span><i class="lg-route" style="background:${OPT_COLORS[2]}"></i>3</span>` +
+  '<span><i class="lg-off"></i>Off-leash zone</span><span><i class="lg-lead"></i>Lead only</span><span><i class="lg-ban"></i>No dogs</span><span><i class="lg-water"></i>Water</span>';
 function drawCreate(){
+  const d = cr.ctx?.area.dog;
+  if (d && cr.options.length) {
+    // Dog-friendly layer: off-leash zones, lead-only and no-dog areas, paths closed to dogs, drinking water
+    const shape = (a, style) => a.closed ? L.polygon(a.rings, style) : L.featureGroup(a.rings.map(r => L.polyline(r, style)));
+    d.off.forEach(a => (a.point ? L.circleMarker(a.point, {radius:7, color:'#2b8a3e', weight:2, fillColor:'#40c057', fillOpacity:.85})
+      : shape(a, {color:'#2b8a3e', weight:1.5, fillColor:'#40c057', fillOpacity:.3})).bindTooltip('Off-leash zone' + (a.name ? ': ' + esc(a.name) : '')).addTo(walkLayer));
+    d.leash.forEach(a => shape(a, {color:'#e8a33d', weight:1.5, dashArray:'5 5', fillColor:'#e8a33d', fillOpacity:.06}).bindTooltip('Dogs on a lead').addTo(walkLayer));
+    d.ban.forEach(a => shape(a, {color:'#e03131', weight:1.5, fillColor:'#e03131', fillOpacity:.22}).bindTooltip('No dogs allowed').addTo(walkLayer));
+    d.banLines.forEach(l => L.polyline(l, {color:'#e03131', weight:3, dashArray:'2 6'}).bindTooltip('No dogs on this path').addTo(walkLayer));
+    d.water.forEach(w => L.circleMarker(w, {radius:5, color:'#ffffff', weight:2, fillColor:'#1c7ed6', fillOpacity:1}).bindTooltip('Drinking water').addTo(walkLayer));
+  }
   if (cr.mode === 'point' && cr.point && !cr.current)
     L.marker([cr.point.lat, cr.point.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start here</span>', iconSize:[80,24], iconAnchor:[40,30]})}).addTo(walkLayer);
+  // The other options as thin dashed lines (click one to select it), the selected one on top
+  cr.options.forEach((v, i) => {
+    if (i === cr.sel) return;
+    L.polyline(v.pts, {color:OPT_COLORS[i], weight:3, opacity:.8, dashArray:'6 6', bubblingMouseEvents:false})
+      .bindTooltip(`Option ${i + 1}: ${fmtKm(v.len)}`).on('click', () => selectOption(i)).addTo(walkLayer);
+  });
   const v = cr.current;
   if (!v) return;
   L.polyline(v.pts, {color:'#ffffff', weight:9, opacity:.85, interactive:false}).addTo(walkLayer);
-  L.polyline(v.pts, {color:ROUTE, weight:5}).bindTooltip(`${fmtKm(v.len)} loop`).addTo(walkLayer);
+  L.polyline(v.pts, {color:OPT_COLORS[cr.sel], weight:5, bubblingMouseEvents:false}).bindTooltip(`Option ${cr.sel + 1}: ${fmtKm(v.len)}`).addTo(walkLayer);
   L.marker([v.start.lat, v.start.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start</span>', iconSize:[50,24], iconAnchor:[25,30]}), zIndexOffset:1000}).addTo(walkLayer);
 }
-const createdTitle = v => (v.kind === 'loop' ? 'Knooppunten loop' : 'Trail loop') + (v.place ? ' · ' + v.place : '');
+const createdTitle = v => (v.kind === 'route' ? v.name : KIND_LABEL[v.kind]) + (v.place && v.kind !== 'route' ? ' · ' + v.place : '');
 function createdShare(v){
   const j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
   return [`🐕 Dog walk: ${createdTitle(v)}`, `🥾 Loop of ${fmtKm(v.len)} (about ${fmtDuration(v.len / 4 * 60)})`,
@@ -1450,35 +1582,52 @@ function renderCreate(){
     : isPhone() ? 'Tap “Choose on map”, then tap where the walk should start.' : 'Click the map where the walk should start.';
   $('#cKm').value = cr.km; $('#cKmOut').textContent = fmtKm(cr.km);
   const v = cr.current, box = $('#createResult');
-  if (!v) { box.innerHTML = ''; return; }
-  const j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
+  if (!v || !cr.options.length) { box.innerHTML = ''; return; }
+  const L0 = cr.ctx.L, j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
   const next = upcoming()[0]?.date || state.settings.startDate || nextSunday();
-  box.innerHTML = `<article class="hero"><div class="hero-body">
-    <div><span class="eyebrow">${v.kind === 'loop' ? 'Signposted knooppunten' : 'Along paths and forest tracks'}</span>
-      <div class="walk-title" style="margin-top:4px">${esc(createdTitle(v))}</div>
-      ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
+  const close = o => Math.abs(o.diff) <= 0.12;
+  const match = o => close(o) ? `<span class="chip good">Matches ${fmtKm(L0)}</span>`
+    : `<span class="chip warn">${fmtKm(Math.abs(o.len - L0))} ${o.len < L0 ? 'shorter' : 'longer'}</span>`;
+  const dogChips = o => [
+    o.dog.offLeash ? '<span class="chip good">Off-leash zone on the way</span>' : '',
+    o.dog.leash ? '<span class="chip warn">Lead required on part</span>' : '',
+    o.dog.banned ? '<span class="chip bad">Dogs banned on part</span>' : '',
+    o.dog.water ? `<span class="chip">💧 ${o.dog.water} water point${o.dog.water > 1 ? 's' : ''}</span>` : '',
+    (o.wide || 0) >= 0.5 ? '<span class="chip good">Wide tracks, easy with a group</span>' : ''].join('');
+  box.innerHTML = `<div class="view">
+    ${cr.options.some(close) ? '' : `<div class="notice">There's no loop of exactly ${fmtKm(L0)} here. These are the closest options.</div>`}
+    <div>
+      <div class="section-label">${cr.options.length} option${cr.options.length > 1 ? 's' : ''} ${cr.ctx.place ? 'in ' + esc(cr.ctx.place) : 'from your point'}</div>
+      <div class="opts">${cr.options.map((o, i) => `<button class="opt ${i === cr.sel ? 'sel' : ''}" data-opt="${i}" aria-pressed="${i === cr.sel}">
+        <span class="opt-num" style="background:${OPT_COLORS[i]}">${i + 1}</span>
+        <span class="opt-main"><b>${esc(o.kind === 'route' ? o.name : KIND_LABEL[o.kind])}</b>
+          <span class="opt-sub">${KIND_LABEL[o.kind]} · ${fmtKm(o.len)} · ${fmtDuration(o.len / 4 * 60)}</span>
+          <span class="chips">${match(o)}${dogChips(o)}</span></span></button>`).join('')}</div>
+      <button class="btn block" id="cMore" style="margin-top:8px">Show 3 more</button>
     </div>
-    <div class="stats">
-      <div class="stat"><small>Length</small><b>${fmtKm(v.len)}</b><span>You asked ${fmtKm(cr.ctx.L)}</span></div>
-      <div class="stat"><small>Walking time</small><b>${fmtDuration(v.len / 4 * 60)}</b><span>At about 4 km/h</span></div>
-      <div class="stat"><small>Shape</small><b>Loop</b><span>Ends at the start</span></div>
-    </div>
-    ${v.kind === 'trail' ? '<p class="note" style="margin:0">Not signposted. Follow it on your phone, or download the GPX for a walking app.</p>' : ''}
-    <div class="actions">
-      <button class="btn" id="cAnother">Another route</button>
-      <button class="btn" id="cShow">Show on map</button>
-      <a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${v.start.lat},${v.start.lon}" target="_blank" rel="noopener">Directions to start</a>
-      <button class="btn" id="cGpx">Download GPX</button>
-    </div>
-    <a class="btn block" href="https://wa.me/?text=${encodeURIComponent(createdShare(v))}" target="_blank" rel="noopener">Share on WhatsApp</a>
-    <div class="add-box">
-      <div class="section-label" style="margin:0">Add to the group calendar</div>
-      <div class="inline"><input type="date" id="cDate" value="${next}" aria-label="Walk date"><button class="btn primary" id="cAdd">Add walk</button></div>
-      <small class="muted">Replaces any walk already planned on that date.</small>
-    </div>
-  </div></article>`;
-  $('#cAnother').onclick = anotherRoute;
-  $('#cShow').onclick = () => { if (isPhone()) setView('map'); fitCreate(); };
+    <article class="hero"><div class="hero-body">
+      <div><span class="eyebrow">Option ${cr.sel + 1} · ${v.kind === 'route' ? 'Official signposted route' : v.kind === 'loop' ? 'Signposted knooppunten' : 'Along paths and forest tracks'}</span>
+        <div class="walk-title" style="margin-top:4px">${esc(createdTitle(v))}</div>
+        ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
+      </div>
+      ${v.kind === 'trail' ? '<p class="note" style="margin:0">Not signposted. Follow it on your phone, or download the GPX for a walking app.</p>' : ''}
+      ${v.kind === 'route' ? '<p class="note" style="margin:0">An official marked route: follow its signs. It starts here at the point closest to where you chose.</p>' : ''}
+      <p class="note" style="margin:0">With a big group of dogs, check the signs at the entrance: rules differ per area. In Flemish forests and nature reserves dogs usually stay on a lead outside off-leash zones.</p>
+      <div class="actions">
+        <button class="btn" id="cShow">Show on map</button>
+        <a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${v.start.lat},${v.start.lon}" target="_blank" rel="noopener">Directions to start</a>
+        <button class="btn" id="cGpx">Download GPX</button>
+        <a class="btn" href="https://wa.me/?text=${encodeURIComponent(createdShare(v))}" target="_blank" rel="noopener">Share on WhatsApp</a>
+      </div>
+      <div class="add-box">
+        <div class="section-label" style="margin:0">Add to the group calendar</div>
+        <div class="inline"><input type="date" id="cDate" value="${next}" aria-label="Walk date"><button class="btn primary" id="cAdd">Add walk</button></div>
+        <small class="muted">Replaces any walk already planned on that date.</small>
+      </div>
+    </div></article></div>`;
+  box.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => selectOption(+b.dataset.opt));
+  $('#cMore').onclick = moreOptions;
+  $('#cShow').onclick = () => { if (isPhone()) setView('map'); fitCreate(true); };
   $('#cGpx').onclick = () => download(`pack-walk-${+v.len.toFixed(1)}km.gpx`, gpx(createdTitle(v), v.pts), 'application/gpx+xml');
   $('#cAdd').onclick = () => addCreatedToCalendar($('#cDate').value);
 }
@@ -1509,14 +1658,14 @@ $('#cArea').innerHTML = '<option value="">Choose a nature area…</option>' + DO
   `<optgroup label="${esc(g)}">${list.map(n => `<option>${esc(n)}</option>`).join('')}</optgroup>`).join('');
 $('#cArea').onchange = () => { $('#cSearch').value = ''; };
 $('#cSearch').onkeydown = e => { if (e.key === 'Enter') createLoop(); };
-document.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => { cr.mode = b.dataset.cmode; cr.current = null; renderCreate(); setView('create'); });
+document.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => { cr.mode = b.dataset.cmode; cr.current = null; cr.options = []; renderCreate(); setView('create'); });
 $('#cKm').oninput = e => { cr.km = +e.target.value; $('#cKmOut').textContent = fmtKm(cr.km); };
 $('#cKm').onchange = () => { state.settings.createKm = cr.km; save(); };
 $('#createBtn').onclick = createLoop;
 $('#pickBtn').onclick = () => { setView('map'); toast('Tap the map where the walk should start'); };
 map.on('click', e => {
   if (lastContent !== 'create' || cr.mode !== 'point') return;
-  cr.point = {lat:e.latlng.lat, lon:e.latlng.lng}; cr.current = null;
+  cr.point = {lat:e.latlng.lat, lon:e.latlng.lng}; cr.current = null; cr.options = [];
   renderCreate(); renderMap();
   if (view === 'map') { setView('create'); toast('Start point set'); }
 });
