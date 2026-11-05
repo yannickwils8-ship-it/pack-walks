@@ -59,3 +59,22 @@ Urban cases, trail loops only, averages (individual loops in the measurement out
 Time: unchanged (3–9 s).
 
 Verdict: **kept, with the dog settings (D).** They raise the unpaved share in town by about half (Laeken 11% → 16%), make loops a little rounder, and pass fewer junctions twice; out & back is about the same. Distance accuracy is a little worse in Woluwe (one loop +7%); step 4's length correction addresses that. The main out-and-back problem in towns is still open and is step 4's job.
+
+
+## Step 3: A*, the start's connected part of the map, load radius D/2.2 + 1.5 km — not kept
+
+What was tried:
+
+- **A\*** instead of Dijkstra, with the estimate "straight-line distance × lowest cost per metre on the map".
+- **Only the part of the map connected to the start** for the start and the waypoints. When the nearest point lies on a small isolated piece, the nearest point on a large connected part is used instead.
+- **Load radius D/2.2 + 1.5 km** (6 km loop: 4.2 km instead of 2.8 km; 10 km: 6.05 instead of 4.1).
+
+Correctness check: on 30 random pairs of points in Laeken and Meerdaalwoud, A* found routes exactly as cheap as Dijkstra in all 30. It was barely faster (Laeken 5.3 s vs 5.8 s, Meerdaalwoud 2.0 vs 1.9 s for 15 routes). The estimate must use the cheapest price on the map (forest path near water, about 0.78), far below a typical street, so A* can't skip much.
+
+Measured on the four cases (same seeds as step 2):
+
+- Zoniënwoud, Meerdaalwoud, Woluwe: identical loops.
+- Laeken run 2: one option changed for the worse, 9.71 km (21% out & back, roundness 0.47) → 10.50 km (26%, 0.33).
+- Slower everywhere: Zoniënwoud 5 → 7 s, Woluwe 4 → 6 s, Laeken 7–8 → 9–12 s, because of the much larger area to load and process.
+
+Verdict: **not kept** (no improvement, slower). The code is on the branch `experiment/step3-astar`. The larger radius belongs to the 36-attempt generator's geometry, so it will be tried again inside step 4 and only kept if it helps there.
