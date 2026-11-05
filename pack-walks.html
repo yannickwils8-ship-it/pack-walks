@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pack Walks</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{
+  --bg:#f6f4ef; --panel:#fff; --ink:#1f2a24; --muted:#6b7570; --line:#e3e0d8;
+  --accent:#2f6b4f; --accent-ink:#fff; --good:#2f8a57; --warn:#c98a12; --bad:#c0392b;
+  --chip:#eef3ef;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141816; --panel:#1c211e; --ink:#e7ece9; --muted:#9aa5a0; --line:#2d3430;
+    --accent:#5fb48a; --accent-ink:#0d1611; --chip:#243029;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+#app{display:grid;grid-template-columns:420px 1fr;height:100vh}
+#side{overflow-y:auto;background:var(--panel);border-right:1px solid var(--line);padding:16px}
+#map{height:100%}
+header h1{margin:0;font-size:22px}
+header p{margin:2px 0 12px;color:var(--muted)}
+.tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.tabs button{background:none;border:0;padding:8px 10px;cursor:pointer;color:var(--muted);font:inherit;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--ink);border-color:var(--accent);font-weight:600}
+form,.row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);min-width:0}
+input{flex:1}
+label{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted);flex:1}
+button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.link{border:0;background:none;color:var(--accent);padding:4px 0}
+button.icon{padding:2px 8px}
+ul{list-style:none;padding:0;margin:0}
+#members li,#history li{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+#members small,#history small{display:block;color:var(--muted)}
+.muted{color:var(--muted)}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.card h3{margin:0 0 4px;font-size:16px}
+.wx.good{border-left:5px solid var(--good)} .wx.warn{border-left:5px solid var(--warn)} .wx.bad{border-left:5px solid var(--bad)}
+.spot{cursor:pointer}
+.spot:hover{border-color:var(--accent)}
+.chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.chip{background:var(--chip);border-radius:20px;padding:1px 9px;font-size:12px}
+.chip.bad{background:#f6d6d2;color:#7a1f15} .chip.warn{background:#f7e7c4;color:#6b4a06} .chip.good{background:#d6eedf;color:#1d5434}
+.plan{border:2px solid var(--accent)}
+.loop{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.pin{background:none;border:0}
+.pin span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);font-size:17px}
+.pin.member span{background:#e8f0ff}
+.pin.center span{background:#ffe9a8}
+.kp{background:#2f6b4f;color:#fff;border-radius:50%;font:600 11px/22px system-ui;text-align:center;width:22px;height:22px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.kp.start{background:#c0392b}
+.status{padding:8px 0;color:var(--muted)}
+h2{font-size:18px;margin:6px 0}
+@media (max-width:800px){
+  #app{grid-template-columns:1fr;grid-template-rows:45vh auto;height:auto}
+  #map{height:45vh;order:-1}
+  #side{border:0}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <header><h1>🐕 Pack Walks</h1><p>Plan the fortnightly group dog walk in Belgium</p></header>
+    <nav class="tabs">
+      <button data-tab="group" class="on">Group</button>
+      <button data-tab="plan">Plan walk</button>
+      <button data-tab="history">History</button>
+      <button data-tab="settings">Settings</button>
+    </nav>
+
+    <section id="tab-group">
+      <form id="addMember">
+        <input id="mName" placeholder="Name" required>
+        <input id="mPlace" placeholder="Town or postcode, e.g. 9000 Gent" required>
+        <button class="primary">Add</button>
+      </form>
+      <ul id="members"></ul>
+      <p id="centerInfo" class="muted"></p>
+    </section>
+
+    <section id="tab-plan" hidden>
+      <div id="planCard"></div>
+      <div class="row">
+        <label>Walk date <input type="date" id="wDate"></label>
+        <label>Start time <input type="time" id="wTime" step="3600"></label>
+      </div>
+      <div id="weather" class="card wx"></div>
+      <div class="row">
+        <button id="findBtn" class="primary">Find spots</button>
+        <button id="surpriseBtn">🎲 Surprise me</button>
+      </div>
+      <div id="spots"></div>
+    </section>
+
+    <section id="tab-history" hidden>
+      <p class="muted">Past walks. Spots you've visited recently, and the same type of terrain twice in a row, get ranked lower so every walk is different.</p>
+      <ul id="history"></ul>
+    </section>
+
+    <section id="tab-settings" hidden>
+      <div class="row">
+        <label>Search radius around meeting area (km) <input type="number" id="sRadius" min="3" max="60"></label>
+      </div>
+      <div class="row">
+        <label>Wind gusts, caution (km/h) <input type="number" id="sGustC" min="20" max="120"></label>
+        <label>Wind gusts, no forests (km/h) <input type="number" id="sGustU" min="20" max="140"></label>
+      </div>
+      <div class="row">
+        <label>Min walk length (km) <input type="number" id="sMin" min="1" max="40" step="0.5"></label>
+        <label>Max walk length (km) <input type="number" id="sMax" min="2" max="40" step="0.5"></label>
+      </div>
+      <div class="row">
+        <button id="exportBtn">Export group data</button>
+        <button id="importBtn">Import</button>
+        <input type="file" id="importFile" accept=".json" hidden>
+      </div>
+      <p class="muted" style="font-size:12px">Data: © OpenStreetMap contributors (spots, walking networks), Waymarked Trails (route overlay), Open-Meteo (weather), Nominatim (address search). Your group data stays in this browser.</p>
+    </section>
+  </aside>
+  <main id="map"></main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const TYPES = {
+  forest:  {label:'Forest',           icon:'🌲', trees:1,   shade:1,   mud:.6},
+  park:    {label:'Park',             icon:'🌳', trees:.6,  shade:.6,  mud:.1},
+  nature:  {label:'Nature reserve',   icon:'🦆', trees:.5,  shade:.4,  mud:.7},
+  heath:   {label:'Heath',            icon:'🌾', trees:.15, shade:.1,  mud:.4},
+  fields:  {label:'Fields & meadows', icon:'🌻', trees:0,   shade:0,   mud:.7},
+  beach:   {label:'Beach & dunes',    icon:'🏖️', trees:0,   shade:0,   mud:0},
+  dogpark: {label:'Dog park',         icon:'🐕', trees:.3,  shade:.3,  mud:.3},
+};
+
+// ---------- state ----------
+const LS = 'packwalks.v1';
+function defaults(){
+  return {members:[], history:[], plan:null,
+    settings:{radius:15, gustCaution:45, gustUnsafe:60, minKm:5, maxKm:7},
+    walk:{date:'', time:'10:00'}};
+}
+let state = (() => {
+  try { const s = JSON.parse(localStorage.getItem(LS)); if (s?.settings?.minKm === 4 && s.settings.maxKm === 10) Object.assign(s.settings, {minKm:5, maxKm:7}); if (s) { const d = defaults(); return {...d, ...s, settings:{...d.settings, ...s.settings}, walk:{...d.walk, ...s.walk}}; } } catch(e) {}
+  return defaults();
+})();
+function save(){ try { localStorage.setItem(LS, JSON.stringify(state)); } catch(e) {} }
+
+const isoDate = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function defaultDate(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const last = state.history.at(-1);
+  if (last) { const n = new Date(last.date+'T12:00'); n.setDate(n.getDate()+14); if (n >= today) return isoDate(n); }
+  const d = new Date(); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
+  return isoDate(d);
+}
+if (!state.walk.date || state.walk.date < isoDate(new Date())) state.walk.date = defaultDate();
+
+// ---------- geo helpers ----------
+function km(a, b){
+  const R = 6371, t = Math.PI/180, dLat = (b.lat-a.lat)*t, dLon = (b.lon-a.lon)*t;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const P = p => ({lat:p[0], lon:p[1]});
+const lineKm = pts => pts.reduce((s, p, i) => i ? s + km(P(pts[i-1]), P(p)) : 0, 0);
+const d2 = (a, b) => (a[0]-b[0])**2 + ((a[1]-b[1])*0.64)**2;
+const ROAD = 1.3; // straight line -> rough road distance
+
+// Point that minimises the longest trip (Badoiu–Clarkson approximation)
+function fairCenter(){
+  const ms = state.members; if (!ms.length) return null;
+  let p = {lat: ms.reduce((s,m)=>s+m.lat,0)/ms.length, lon: ms.reduce((s,m)=>s+m.lon,0)/ms.length};
+  for (let i = 1; i <= 400; i++) {
+    let far = ms[0], fd = -1;
+    for (const m of ms) { const d = km(p, m); if (d > fd) { fd = d; far = m; } }
+    p = {lat: p.lat + (far.lat-p.lat)/(i+1), lon: p.lon + (far.lon-p.lon)/(i+1)};
+  }
+  return p;
+}
+
+// ---------- APIs ----------
+async function geocode(q){
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=be&q='+encodeURIComponent(q));
+  const j = await r.json();
+  if (!j.length) throw new Error('Could not find "'+q+'" in Belgium');
+  return {lat:+j[0].lat, lon:+j[0].lon};
+}
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+async function overpass(q){
+  let err;
+  for (const u of OVERPASS) {
+    try {
+      const r = await fetch(u, {method:'POST', body:'data='+encodeURIComponent(q), headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+      if (r.ok) return await r.json();
+      err = new Error('map data server busy ('+r.status+'), try again in a minute');
+    } catch(e) { err = e; }
+  }
+  throw err;
+}
+async function fetchWeather(lat, lon, date, time){
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}`+
+    `&hourly=temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,weather_code&timezone=Europe%2FBrussels&forecast_days=16`;
+  const j = await (await fetch(url)).json();
+  const h = j.hourly, i = h.time.indexOf(`${date}T${time.slice(0,2)}:00`);
+  if (i < 0) return null;
+  const idx = [i, i+1, i+2].filter(k => k < h.time.length);  // ~3h walk window
+  const pick = a => idx.map(k => a[k] ?? 0);
+  return {
+    gust: Math.round(Math.max(...pick(h.wind_gusts_10m))),
+    wind: Math.round(Math.max(...pick(h.wind_speed_10m))),
+    tmax: Math.round(Math.max(...pick(h.temperature_2m))),
+    tmin: Math.round(Math.min(...pick(h.temperature_2m))),
+    rain: +pick(h.precipitation).reduce((a,b)=>a+b,0).toFixed(1),
+    pop: Math.max(...pick(h.precipitation_probability)),
+    code: h.weather_code[i],
+  };
+}
+function wxIcon(c){
+  if (c === 0) return '☀️'; if (c <= 2) return '🌤️'; if (c === 3) return '☁️'; if (c <= 48) return '🌫️';
+  if (c <= 67 || (c >= 80 && c <= 82)) return '🌧️'; if (c <= 77 || c === 85 || c === 86) return '🌨️'; return '⛈️';
+}
+
+// ---------- weather rules ----------
+function verdict(w){
+  const s = state.settings, notes = [];
+  let level = 'good', head = 'Good walking weather';
+  if (w.gust >= s.gustUnsafe) {
+    level = 'bad'; head = 'Too windy for woods: open terrain only';
+    notes.push(`Gusts up to ${w.gust} km/h: risk of falling branches. Forests and parks are ranked down.`);
+    if (w.gust >= s.gustUnsafe + 20) head = 'Storm: consider postponing';
+  } else if (w.gust >= s.gustCaution) {
+    level = 'warn'; head = 'Breezy: open or mixed terrain preferred';
+    notes.push(`Gusts up to ${w.gust} km/h. Dense forest ranked lower.`);
+  }
+  if (w.tmax >= 28) { level = 'bad'; head = 'Hot: risky for dogs'; notes.push('Walk early, bring water, choose shade, avoid asphalt and sand.'); }
+  else if (w.tmax >= 23) { if (level === 'good') level = 'warn'; notes.push('Warm: shaded forest and water preferred.'); }
+  if (w.rain >= 4) notes.push(`Wet (${w.rain} mm): muddy terrain ranked lower, parks ranked up.`);
+  if (w.tmin <= 0) notes.push('Frost: watch paws and icy paths.');
+  return {level, head, notes};
+}
+function suitability(type, w){
+  if (!w) return 1;
+  const t = TYPES[type], s = state.settings; let f = 1;
+  if (w.gust >= s.gustUnsafe) f *= 1 - 0.95*t.trees;
+  else if (w.gust >= s.gustCaution) f *= 1 - 0.5*t.trees;
+  if (type === 'beach' && w.gust >= s.gustCaution) f *= 0.6;
+  if (w.tmax >= 23) f *= 0.5 + 0.5*t.shade - (w.tmax >= 28 && type === 'beach' ? 0.3 : 0);
+  if (w.rain >= 4) f *= 1 - 0.4*t.mud;
+  return Math.max(0.02, f);
+}
+function spotNotes(type, w){
+  if (!w) return [];
+  const t = TYPES[type], s = state.settings, n = [];
+  if (w.gust >= s.gustUnsafe && t.trees > .4) n.push(['bad','unsafe in this wind']);
+  else if (w.gust >= s.gustCaution && t.trees > .4) n.push(['warn','windy under trees']);
+  else if (w.gust >= s.gustCaution && t.trees < .2) n.push(['good','safe in wind']);
+  if (w.tmax >= 23) n.push(t.shade > .5 ? ['good','shady'] : ['warn','little shade']);
+  if (w.rain >= 4 && t.mud > .5) n.push(['warn','muddy']);
+  return n;
+}
+
+// ---------- map ----------
+const map = L.map('map').setView([50.6, 4.6], 8);
+const osm = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {subdomains:'abcd', maxZoom:19, attribution:'© OpenStreetMap contributors © CARTO'}).addTo(map);
+const trails = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png', {maxZoom:18, opacity:.75, attribution:'© waymarkedtrails.org'}).addTo(map);
+L.control.layers({'OpenStreetMap':osm}, {'Marked walking routes':trails}).addTo(map);
+const memberLayer = L.layerGroup().addTo(map), spotLayer = L.layerGroup().addTo(map), routeLayer = L.layerGroup().addTo(map);
+const pin = (emoji, cls='') => L.divIcon({className:'pin '+cls, html:`<span>${emoji}</span>`, iconSize:[30,30], iconAnchor:[15,15]});
+
+// ---------- group ----------
+function renderMembers(){
+  $('#members').innerHTML = state.members.map(m =>
+    `<li><span><b>${esc(m.name)}</b><small>${esc(m.place)}</small></span><button class="icon" data-del="${m.id}" title="Remove">✕</button></li>`
+  ).join('') || '<li class="muted">Add everyone from the WhatsApp group with their town or postcode.</li>';
+  memberLayer.clearLayers();
+  state.members.forEach(m => L.marker([m.lat, m.lon], {icon:pin('🧍','member')}).bindTooltip(m.name).addTo(memberLayer));
+  const c = fairCenter();
+  if (!c) { $('#centerInfo').textContent = ''; return; }
+  const far = Math.max(...state.members.map(m => km(c, m)));
+  $('#centerInfo').textContent = `⭐ Fairest meeting area marked on the map: nobody drives more than ~${Math.round(far*ROAD)} km to get there.`;
+  L.marker([c.lat, c.lon], {icon:pin('⭐','center')}).bindTooltip('Fairest meeting area').addTo(memberLayer);
+  L.circle([c.lat, c.lon], {radius:state.settings.radius*1000, color:'#2f6b4f', weight:1, dashArray:'6 6', fill:false, interactive:false}).addTo(memberLayer);
+  map.fitBounds(L.latLngBounds(state.members.map(m => [m.lat, m.lon])).extend([c.lat, c.lon]).pad(0.3));
+}
+$('#addMember').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('#mName').value.trim(), place = $('#mPlace').value.trim(), btn = e.submitter;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const g = await geocode(place);
+    state.members.push({id:Date.now().toString(36), name, place, ...g});
+    save(); renderMembers(); $('#mName').value = ''; $('#mPlace').value = ''; $('#mName').focus();
+    lastSpots = null;
+  } catch(err) { alert(err.message); }
+  btn.disabled = false; btn.textContent = 'Add';
+});
+$('#members').addEventListener('click', e => {
+  const id = e.target.dataset.del; if (!id) return;
+  state.members = state.members.filter(m => m.id !== id); save(); renderMembers(); lastSpots = null;
+});
+
+// ---------- weather panel ----------
+let currentWx = null;
+async function loadWeather(){
+  const c = fairCenter(), box = $('#weather');
+  box.className = 'card wx';
+  if (!c) { box.innerHTML = '<span class="muted">Add group members first.</span>'; currentWx = null; return; }
+  box.innerHTML = '<span class="muted">Loading forecast…</span>';
+  try {
+    currentWx = await fetchWeather(c.lat, c.lon, state.walk.date, state.walk.time);
+    if (!currentWx) {
+      box.innerHTML = '<b>No forecast yet</b><div class="muted">Forecasts reach 16 days ahead. Spots are ranked without weather for now; check again closer to the date.</div>';
+      return;
+    }
+    const w = currentWx, v = verdict(w);
+    box.classList.add(v.level);
+    box.innerHTML = `<h3>${wxIcon(w.code)} ${esc(v.head)}</h3>
+      <div>${w.tmin}–${w.tmax}°C · wind ${w.wind} km/h, gusts ${w.gust} km/h · rain ${w.rain} mm (${w.pop}%)</div>
+      ${v.notes.map(n => `<div class="muted">• ${esc(n)}</div>`).join('')}`;
+  } catch(err) { currentWx = null; box.innerHTML = 'Weather unavailable: '+esc(err.message); }
+}
+
+// ---------- spot search ----------
+let lastSpots = null;
+function classify(t){
+  if (t.natural === 'beach' || t.natural === 'dune') return 'beach';
+  if (t.landuse === 'forest' || t.natural === 'wood') return 'forest';
+  if (t.natural === 'heath') return 'heath';
+  if (t.natural === 'grassland' || t.landuse === 'meadow') return 'fields';
+  if (t.leisure === 'nature_reserve') return 'nature';
+  if (t.leisure === 'dog_park') return 'dogpark';
+  if (t.leisure === 'park') return 'park';
+  return null;
+}
+async function searchSpots(){
+  const c = fairCenter(); if (!c) throw new Error('Add group members first.');
+  const R = state.settings.radius*1000, a = `(around:${R},${c.lat.toFixed(5)},${c.lon.toFixed(5)})`;
+  const q = `[out:json][timeout:90];(
+    wr["leisure"~"^(park|nature_reserve|dog_park)$"]["name"]${a};
+    wr["landuse"="forest"]["name"]${a};
+    wr["natural"~"^(wood|heath|beach|dune|grassland)$"]["name"]${a};
+  );out tags bb;`;
+  const data = await overpass(q), byName = new Map();
+  for (const e of data.elements) {
+    const t = e.tags || {}, type = classify(t), b = e.bounds;
+    if (!type || !b || t.dog === 'no' || t.access === 'private' || t.access === 'no') continue;
+    const lat = (b.minlat+b.maxlat)/2, lon = (b.minlon+b.maxlon)/2;
+    const area = km({lat:b.minlat, lon}, {lat:b.maxlat, lon}) * km({lat, lon:b.minlon}, {lat, lon:b.maxlon}) * 0.6;
+    if (area < (type === 'dogpark' ? 0.005 : type === 'park' ? 0.08 : 0.2)) continue;
+    const key = t.name.toLowerCase(), prev = byName.get(key);
+    if (prev && prev.area >= area) continue;
+    byName.set(key, {id:e.type+e.id, name:t.name, type, lat, lon, area, dog:t.dog,
+      bounds:[[b.minlat, b.minlon], [b.maxlat, b.maxlon]]});
+  }
+  const spots = [...byName.values()], road = await drivingKm(state.members, spots);
+  return spots.map((s, j) => {
+    const dists = state.members.map((m, i) => ({name:m.name, km: road ? road[i][j] : km(m, s)*ROAD}));
+    return {...s, dists, maxD:Math.max(...dists.map(d => d.km)), avgD:dists.reduce((x,d)=>x+d.km,0)/dists.length, jitter:0.85+Math.random()*0.3};
+  });
+}
+// Real driving distance (km) from each member to each spot, via OSRM's table service. Returns null if unavailable.
+async function drivingKm(members, spots){
+  if (!members.length || !spots.length) return null;
+  const pts = [...members, ...spots].map(p => `${p.lon},${p.lat}`).join(';');
+  const src = members.map((_, i) => i).join(';'), dst = spots.map((_, j) => members.length + j).join(';');
+  try {
+    const j = await (await fetch(`https://router.project-osrm.org/table/v1/driving/${pts}?sources=${src}&destinations=${dst}&annotations=distance`)).json();
+    if (j.code !== 'Ok') return null;
+    return j.distances.map(row => row.map(m => m == null ? Infinity : m/1000));
+  } catch(e) { return null; }
+}
+function variety(s){
+  const h = state.history.slice(-8);
+  if (h.some(x => x.name === s.name)) return 0.25;
+  let f = 1;
+  if (h.at(-1)?.type === s.type) f *= 0.6;
+  if (h.slice(-3).filter(x => x.type === s.type).length >= 2) f *= 0.75;
+  return f;
+}
+function rank(spots){
+  return spots.filter(s => isFinite(s.maxD)).map(s => {
+    const fair = Math.exp(-(0.6*s.maxD + 0.4*s.avgD)/35);
+    const size = Math.min(1, 0.4 + 0.6*Math.log10(1 + s.area*3));
+    return {...s, score: fair * size * suitability(s.type, currentWx) * variety(s) * s.jitter};
+  }).sort((a, b) => b.score - a.score);
+}
+function renderSpots(){
+  spotLayer.clearLayers(); routeLayer.clearLayers();
+  if (!lastSpots) return;
+  const list = rank(lastSpots).slice(0, 15);
+  if (!list.length) { $('#spots').innerHTML = '<p class="muted">No walking spots found. Increase the search radius in Settings.</p>'; return; }
+  $('#spots').innerHTML = `<p class="muted">${lastSpots.length} spots found, best ${list.length} for this group and this weather:</p>` +
+    list.map((s, i) => {
+      const t = TYPES[s.type];
+      const chips = [[ '', `${t.icon} ${t.label}`], ['', `${s.area < 1 ? s.area.toFixed(2) : s.area.toFixed(1)} km²`], ['', `max ${Math.round(s.maxD)} km drive`],
+        ...spotNotes(s.type, currentWx), ...(s.dog === 'leashed' ? [['warn','dogs on leash']] : []),
+        ...(variety(s) < 1 ? [['warn', variety(s) < .5 ? 'visited recently' : 'same type as last time']] : [])];
+      return `<div class="card spot" data-i="${i}"><h3>${i+1}. ${esc(s.name)}</h3>
+        <div class="chips">${chips.map(([c, x]) => `<span class="chip ${c}">${esc(x)}</span>`).join('')}</div></div>`;
+    }).join('');
+  list.forEach((s, i) => L.marker([s.lat, s.lon], {icon:pin(TYPES[s.type].icon)}).bindTooltip(`${i+1}. ${s.name}`).on('click', () => openSpot(s)).addTo(spotLayer));
+  $('#spots').querySelectorAll('.spot').forEach(el => el.onclick = () => openSpot(list[+el.dataset.i]));
+  shownSpots = list;
+}
+let shownSpots = [];
+async function find(){
+  const btn = $('#findBtn');
+  btn.disabled = true; $('#spots').innerHTML = '<p class="status">Searching parks, forests, heaths and nature reserves…</p>';
+  try { if (!lastSpots) lastSpots = await searchSpots(); else lastSpots.forEach(s => s.jitter = 0.85+Math.random()*0.3); renderSpots(); }
+  catch(err) { $('#spots').innerHTML = `<p class="status">⚠️ ${esc(err.message)}</p>`; }
+  btn.disabled = false; btn.textContent = 'Shuffle spots';
+}
+$('#findBtn').onclick = find;
+$('#surpriseBtn').onclick = async () => {
+  if (!shownSpots.length) await find();
+  const top = shownSpots.slice(0, 8); if (!top.length) return;
+  const tot = top.reduce((a, s) => a + s.score, 0); let r = Math.random()*tot;
+  openSpot(top.find(s => (r -= s.score) <= 0) || top[0]);
+};
+
+// ---------- spot detail: knooppunten loops + marked routes ----------
+function chainWays(ways, start){
+  const rest = ways.map(w => w.slice()), out = []; let cur = start;
+  while (rest.length) {
+    let bi = 0, rev = false, bd = Infinity;
+    rest.forEach((w, i) => { const a = d2(cur, w[0]), b = d2(cur, w.at(-1)); if (a < bd) { bd = a; bi = i; rev = false; } if (b < bd) { bd = b; bi = i; rev = true; } });
+    const w = rest.splice(bi, 1)[0]; if (rev) w.reverse(); out.push(...w); cur = w.at(-1);
+  }
+  return out;
+}
+function buildGraph(nodes, segs){
+  const adj = new Map(nodes.map(n => [n.id, []])), byId = new Map(nodes.map(n => [n.id, n]));
+  const near = (pts, cands, tol) => { const hit = new Set(); for (const n of cands) for (const p of pts) if (km(P(p), n) < tol) { hit.add(n.id); break; } return hit; };
+  for (const s of segs) {
+    const all = s.ways.flat();
+    const minLat = Math.min(...all.map(p=>p[0]))-.001, maxLat = Math.max(...all.map(p=>p[0]))+.001;
+    const minLon = Math.min(...all.map(p=>p[1]))-.0015, maxLon = Math.max(...all.map(p=>p[1]))+.0015;
+    const cands = nodes.filter(n => n.lat > minLat && n.lat < maxLat && n.lon > minLon && n.lon < maxLon);
+    let hit = near(s.ways.flatMap(w => [w[0], w.at(-1)]), cands, 0.04);
+    if (hit.size !== 2) hit = near(all, cands, 0.025);
+    if (hit.size !== 2) continue;
+    const [a, b] = [...hit], e = {id:s.id, a, b, len:s.len, ways:s.ways};
+    adj.get(a).push(e); adj.get(b).push(e);
+  }
+  return {adj, byId};
+}
+function findLoops(g, startId, minKm, maxKm){
+  const start = g.byId.get(startId), res = new Map(), visited = new Set([startId]), used = new Set(), path = [];
+  let steps = 0;
+  (function dfs(cur, len){
+    if (++steps > 80000 || res.size > 300) return;
+    for (const e of g.adj.get(cur) || []) {
+      if (used.has(e.id)) continue;
+      const nx = e.a === cur ? e.b : e.a, nl = len + e.len;
+      if (nl + km(g.byId.get(nx), start) > maxKm) continue;
+      if (nx === startId) {
+        if (nl >= minKm && path.length >= 2) {
+          const steps2 = [...path, {e, from:cur}], key = steps2.map(s => s.e.id).sort().join(',');
+          if (!res.has(key)) res.set(key, {steps:steps2, len:nl});
+        }
+        continue;
+      }
+      if (visited.has(nx)) continue;
+      visited.add(nx); used.add(e.id); path.push({e, from:cur});
+      dfs(nx, nl);
+      path.pop(); used.delete(e.id); visited.delete(nx);
+    }
+  })(startId, 0);
+  const target = (minKm + maxKm)/2;
+  return [...res.values()].map(l => ({...l, r: Math.abs(l.len - target)/target + Math.random()*0.35})).sort((a, b) => a.r - b.r);
+}
+
+let detail = null;
+async function openSpot(s){
+  map.fitBounds(s.bounds, {maxZoom:15});
+  spotLayer.clearLayers(); routeLayer.clearLayers();
+  L.marker([s.lat, s.lon], {icon:pin(TYPES[s.type].icon)}).addTo(spotLayer);
+  L.rectangle(s.bounds, {color:'#2f6b4f', weight:1, fillOpacity:.05, interactive:false}).addTo(spotLayer);
+  const t = TYPES[s.type];
+  $('#spots').innerHTML = `<button class="link" id="back">← All spots</button>
+    <h2>${t.icon} ${esc(s.name)}</h2>
+    <div class="chips"><span class="chip">${t.label}</span>${spotNotes(s.type, currentWx).map(([c,x]) => `<span class="chip ${c}">${esc(x)}</span>`).join('')}${s.dog==='leashed'?'<span class="chip warn">dogs on leash</span>':''}</div>
+    <p class="muted">Driving: ${s.dists.map(d => `${esc(d.name)} ${Math.round(d.km)} km`).join(' · ')}</p>
+    <p class="muted" style="font-size:13px">${state.members.map(m => `<a href="https://www.google.com/maps/dir/${m.lat},${m.lon}/${s.lat},${s.lon}" target="_blank" rel="noopener">Directions from ${esc(m.name)}</a>`).join(' · ')}</p>
+    <div id="loops" class="status">Loading walking network (knooppunten), routes and parking…</div>
+    <div id="routes"></div>`;
+  $('#back').onclick = renderSpots;
+
+  const R = Math.round(Math.min(4500, Math.max(1500, state.settings.maxKm*1000/2.4)));
+  const a = `(around:${R},${s.lat.toFixed(5)},${s.lon.toFixed(5)})`;
+  const q = `[out:json][timeout:90];
+    relation["route"~"^(hiking|foot|walking)$"]["network"!~"^(nwn|iwn)$"]${a};
+    out geom;
+    node["rwn_ref"]${a};
+    out;
+    nwr["amenity"="parking"]["access"!~"^(private|no|customers)$"](around:${Math.min(R,2000)},${s.lat.toFixed(5)},${s.lon.toFixed(5)});
+    out center 25;`;
+  let data;
+  try { data = await overpass(q); } catch(err) { $('#loops').innerHTML = '⚠️ '+esc(err.message); return; }
+
+  const nodes = [], segs = [], routes = [], parkings = [];
+  for (const e of data.elements) {
+    const tg = e.tags || {};
+    if (e.type === 'node' && tg.rwn_ref) nodes.push({id:e.id, ref:tg.rwn_ref, lat:e.lat, lon:e.lon});
+    else if (tg.amenity === 'parking') { const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon; if (lat) parkings.push({lat, lon, name:tg.name}); }
+    else if (e.type === 'relation') {
+      const ways = (e.members || []).filter(m => m.type === 'way' && m.geometry?.length > 1).map(m => m.geometry.map(p => [p.lat, p.lon]));
+      if (!ways.length) continue;
+      const len = ways.reduce((x, w) => x + lineKm(w), 0);
+      if (tg['network:type'] === 'node_network') segs.push({id:e.id, ways, len});
+      else routes.push({id:e.id, name:tg.name || tg.ref || 'Marked walking route', symbol:tg['osmc:symbol'], ways, len});
+    }
+  }
+  parkings.sort((p, q2) => km(p, s) - km(q2, s));
+  const parking = parkings[0] || null;
+  if (parking) L.marker([parking.lat, parking.lon], {icon:pin('🅿️')}).bindTooltip('Parking'+(parking.name ? ': '+parking.name : '')).addTo(spotLayer);
+
+  const g = buildGraph(nodes, segs);
+  detail = {spot:s, parking, g, loops:[], loopIdx:0, routes, startId:null};
+  nodes.filter(n => g.adj.get(n.id).length).forEach(n => {
+    L.marker([n.lat, n.lon], {icon:L.divIcon({className:'', html:`<div class="kp" data-kp="${n.id}">${esc(n.ref)}</div>`, iconSize:[22,22], iconAnchor:[11,11]})})
+      .bindTooltip('Knooppunt '+n.ref+': click to start the loop here').on('click', () => { setStart(n.id); }).addTo(spotLayer);
+  });
+  const anchor = parking || s, startNode = nodes.filter(n => g.adj.get(n.id).length).sort((x, y) => km(x, anchor) - km(y, anchor))[0];
+  if (startNode) setStart(startNode.id);
+  else $('#loops').innerHTML = '<p class="muted">No walking node network (knooppunten) mapped here. Pick one of the marked routes below.</p>';
+  renderRoutes();
+}
+function setStart(id){
+  detail.startId = id;
+  document.querySelectorAll('.kp').forEach(el => el.classList.toggle('start', +el.dataset.kp === id));
+  detail.loops = findLoops(detail.g, id, state.settings.minKm, state.settings.maxKm);
+  detail.loopIdx = 0;
+  showLoop();
+}
+function loopPoints(l){
+  const g = detail.g; let pts = [];
+  for (const st of l.steps) { const n = g.byId.get(st.from); pts = pts.concat(chainWays(st.e.ways, [n.lat, n.lon])); }
+  return pts;
+}
+function loopRefs(l){
+  const g = detail.g;
+  return [...l.steps.map(st => g.byId.get(st.from).ref), g.byId.get(detail.startId).ref].join(' → ');
+}
+function showLoop(){
+  routeLayer.clearLayers();
+  const box = $('#loops'), g = detail.g, sn = g.byId.get(detail.startId);
+  if (!detail.loops.length) {
+    box.innerHTML = `<p class="muted">No loop of ${state.settings.minKm}–${state.settings.maxKm} km from knooppunt ${esc(sn.ref)}. Click another numbered knooppunt on the map, or change walk length in Settings.</p>`;
+    return;
+  }
+  const l = detail.loops[detail.loopIdx], pts = loopPoints(l);
+  L.polyline(pts, {color:'#c0392b', weight:5, opacity:.85}).addTo(routeLayer);
+  box.className = '';
+  box.innerHTML = `<div class="card"><h3>🔁 Loop walk: ${l.len.toFixed(1)} km</h3>
+    <div>Follow knooppunten: <b>${esc(loopRefs(l))}</b></div>
+    <div class="muted">Option ${detail.loopIdx+1} of ${detail.loops.length} from knooppunt ${esc(sn.ref)}. Click another number on the map to start elsewhere.</div>
+    <div class="row" style="margin-top:8px">
+      <button id="nextLoop">Another loop</button>
+      <button id="gpxLoop">GPX</button>
+      <button id="pickLoop" class="primary">Choose this walk</button>
+    </div></div>`;
+  $('#nextLoop').onclick = () => { detail.loopIdx = (detail.loopIdx + 1) % detail.loops.length; showLoop(); };
+  $('#gpxLoop').onclick = () => download(`${detail.spot.name} ${l.len.toFixed(1)}km.gpx`, gpx(detail.spot.name, pts));
+  $('#pickLoop').onclick = () => choose({label:'Knooppunten '+loopRefs(l), len:l.len, pts});
+}
+function renderRoutes(){
+  const tgt = (state.settings.minKm + state.settings.maxKm)/2;
+  const rs = detail.routes.filter(r => r.len >= 1 && r.len <= 30).sort((a, b) => Math.abs(a.len-tgt) - Math.abs(b.len-tgt)).slice(0, 8);
+  if (!rs.length) { $('#routes').innerHTML = ''; return; }
+  $('#routes').innerHTML = '<h3 style="margin:14px 0 6px">Marked walking routes nearby</h3>' + rs.map((r, i) =>
+    `<div class="card loop"><span><b>${esc(r.name)}</b><br><small class="muted">${r.len.toFixed(1)} km</small></span>
+     <span><button data-show="${i}">Show</button> <button data-pick="${i}" class="primary">Choose</button></span></div>`).join('');
+  $('#routes').querySelectorAll('button').forEach(b => b.onclick = () => {
+    const r = rs[+(b.dataset.show ?? b.dataset.pick)], pts = chainWays(r.ways, r.ways[0][0]);
+    routeLayer.clearLayers();
+    r.ways.forEach(w => L.polyline(w, {color:'#7b3fb5', weight:5, opacity:.85}).addTo(routeLayer));
+    map.fitBounds(L.latLngBounds(r.ways.flat()).pad(0.1));
+    if (b.dataset.pick) choose({label:r.name, len:r.len, pts});
+  });
+}
+
+// ---------- plan, WhatsApp, GPX ----------
+function gpx(name, pts){
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Pack Walks" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(name)}</name><trkseg>` +
+    pts.map(p => `<trkpt lat="${p[0].toFixed(6)}" lon="${p[1].toFixed(6)}"/>`).join('') + '</trkseg></trk></gpx>';
+}
+function download(name, text){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'application/gpx+xml'})); a.download = name; a.click();
+}
+function choose(route){
+  const s = detail.spot, meet = detail.parking || s;
+  state.plan = {date:state.walk.date, time:state.walk.time, spot:{name:s.name, type:s.type},
+    meet:{lat:meet.lat, lon:meet.lon, parking:!!detail.parking}, route:{label:route.label, len:route.len},
+    wx:currentWx, gpx:gpx(s.name, route.pts)};
+  save(); renderPlan(); $('#side').scrollTop = 0;
+}
+function planMessage(p){
+  const d = new Date(p.date+'T12:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
+  const t = TYPES[p.spot.type];
+  const lines = [`🐕 Group dog walk: ${d}, ${p.time}`, `📍 ${p.spot.name} (${t.label} ${t.icon})`,
+    `${p.meet.parking ? '🅿️ Meet at the parking' : '📌 Meeting point'}: https://www.google.com/maps/search/?api=1&query=${p.meet.lat.toFixed(5)},${p.meet.lon.toFixed(5)}`,
+    `🥾 ${p.route.label} (${p.route.len.toFixed(1)} km)`];
+  if (p.wx) lines.push(`${wxIcon(p.wx.code)} ${p.wx.tmin}–${p.wx.tmax}°C, gusts ${p.wx.gust} km/h, rain ${p.wx.rain} mm`);
+  lines.push('Who joins? 👍');
+  return lines.join('\n');
+}
+function renderPlan(){
+  const p = state.plan, box = $('#planCard');
+  if (!p) { box.innerHTML = ''; return; }
+  const msg = planMessage(p);
+  box.innerHTML = `<div class="card plan"><h3>✅ Planned walk</h3>
+    <pre style="white-space:pre-wrap;font:inherit;margin:6px 0">${esc(msg)}</pre>
+    <div class="row">
+      <a href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener"><button class="primary">Send to WhatsApp</button></a>
+      <button id="copyPlan">Copy text</button>
+      <button id="gpxPlan">GPX</button>
+      <button id="donePlan">Mark as walked</button>
+      <button id="dropPlan" class="link">Remove</button>
+    </div></div>`;
+  $('#copyPlan').onclick = () => navigator.clipboard.writeText(msg).then(() => $('#copyPlan').textContent = 'Copied ✓');
+  $('#gpxPlan').onclick = () => download(`${p.spot.name}.gpx`, p.gpx);
+  $('#donePlan').onclick = () => {
+    state.history.push({date:p.date, name:p.spot.name, type:p.spot.type, route:p.route.label, km:+p.route.len.toFixed(1)});
+    state.plan = null; state.walk.date = defaultDate(); save();
+    $('#wDate').value = state.walk.date; renderPlan(); renderHistory(); loadWeather().then(() => lastSpots && renderSpots());
+  };
+  $('#dropPlan').onclick = () => { state.plan = null; save(); renderPlan(); };
+}
+
+// ---------- history & settings ----------
+function renderHistory(){
+  $('#history').innerHTML = state.history.map((h, i) => ({h, i})).reverse().map(({h, i}) =>
+    `<li><span><b>${TYPES[h.type]?.icon || ''} ${esc(h.name)}</b><small>${esc(h.date)} · ${esc(h.km)} km · ${esc(h.route)}</small></span><button class="icon" data-hdel="${i}">✕</button></li>`
+  ).join('') || '<li class="muted">No walks yet.</li>';
+}
+$('#history').addEventListener('click', e => {
+  const i = e.target.dataset.hdel; if (i === undefined) return;
+  state.history.splice(+i, 1); save(); renderHistory();
+});
+const settingInputs = {sRadius:'radius', sGustC:'gustCaution', sGustU:'gustUnsafe', sMin:'minKm', sMax:'maxKm'};
+for (const [id, key] of Object.entries(settingInputs)) {
+  $('#'+id).value = state.settings[key];
+  $('#'+id).onchange = e => {
+    state.settings[key] = +e.target.value; save();
+    if (key === 'radius') { lastSpots = null; renderMembers(); }
+  };
+}
+$('#exportBtn').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({members:state.members, history:state.history, settings:state.settings}, null, 2)], {type:'application/json'}));
+  a.download = 'pack-walks-group.json'; a.click();
+};
+$('#importBtn').onclick = () => $('#importFile').click();
+$('#importFile').onchange = async e => {
+  try {
+    const d = JSON.parse(await e.target.files[0].text());
+    if (!Array.isArray(d.members)) throw new Error('Not a Pack Walks export');
+    state.members = d.members; state.history = d.history || []; state.settings = {...state.settings, ...d.settings};
+    save(); location.reload();
+  } catch(err) { alert(err.message); }
+};
+
+// ---------- tabs & init ----------
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('#side section').forEach(s => s.hidden = s.id !== 'tab-'+b.dataset.tab);
+  if (b.dataset.tab === 'plan') loadWeather();
+  setTimeout(() => map.invalidateSize(), 50);
+});
+$('#wDate').value = state.walk.date; $('#wTime').value = state.walk.time;
+$('#wDate').onchange = e => { state.walk.date = e.target.value; save(); loadWeather().then(() => lastSpots && renderSpots()); };
+$('#wTime').onchange = e => { state.walk.time = e.target.value.slice(0,2)+':00'; save(); loadWeather().then(() => lastSpots && renderSpots()); };
+renderMembers(); renderHistory(); renderPlan();
+</script>
+</body>
+</html>

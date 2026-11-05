@@ -53,10 +53,15 @@ On a phone the navigation sits at the bottom, and the map has its own **Map** ta
 ## How walks are chosen
 
 - **Walk types:** official knooppunten loops (the numbered walking network) and GR/PR routes that return to their start.
-- **Length:** always **5 to 8 km**. Within that range the app aims near the shortest maximum in the group.
+- **Length:** always **5 to 8 km**, and preferably no longer than the shortest maximum in the group. Lengths vary from walk to walk across that range.
 - **Nature only:** at least 60% of the route must run through woods, fields, meadows, heath, parks or nature reserves. Routes through built-up areas, and walks starting within 1.5 km of a village or town, are skipped. Woods such as Zoniënwoud or Meerdalwoud rank highest.
 - **Distance:** at least half the group must be within their maximum drive.
-- **Variety:** each walk appears only once in a batch, and recent walks rank lower.
+- **Variety:**
+  - Starting points are spread over the whole area around the group, and up to three different loops are tried from each junction.
+  - Two walks in one batch never share more than 40% of their paths.
+  - Walks that overlap recent walks, or start within 2.5 km of one, rank lower.
+  - The final choice is made at random from the best few, so pressing **Plan walks** again gives a different set.
+- **Fair driving:** over a batch, the app keeps track of how far each person has driven and favours places that are close for whoever has driven most so far.
 - **Weather** at the start point, for the walk's time:
   - gusts of **60 km/h or more** cancel the walk, and the card says why,
   - gusts of **45 km/h or more** steer walks away from woods,

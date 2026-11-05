@@ -377,6 +377,17 @@ function km(a, b){
 const P = p => ({lat:p[0], lon:p[1]});
 const lineKm = pts => pts.reduce((s, p, i) => i ? s + km(P(pts[i-1]), P(p)) : 0, 0);
 const d2 = (a, b) => (a[0]-b[0])**2 + ((a[1]-b[1])*0.64)**2;
+function shuffle(a){
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// A route's footprint as a set of ~250 m squares, to measure how much two walks share
+const cellsOf = pts => new Set(pts.map(p => Math.round(p[0] / 0.00225) + ':' + Math.round(p[1] / 0.0036)));
+function overlap(a, b){
+  const [s, l] = a.size < b.size ? [a, b] : [b, a];
+  let n = 0; s.forEach(x => { if (l.has(x)) n++; });
+  return s.size ? n / s.size : 0;
+}
 function fairCenter(){
   const ms = state.members; if (!ms.length) return null;
   let p = {lat: ms.reduce((s,m)=>s+m.lat,0)/ms.length, lon: ms.reduce((s,m)=>s+m.lon,0)/ms.length};
@@ -553,7 +564,7 @@ async function fetchCandidates(c, R, lo, hi){
   const share = (pts, boxes) => pts.length
     ? pts.filter(p => boxes.some(b => p[0] >= b.minlat && p[0] <= b.maxlat && p[1] >= b.minlon && p[1] <= b.maxlon)).length / pts.length
     : 0;
-  const addCand = (kind, name, start, len, pts) => {
+  const addCand = (kind, name, start, len, pts, cells) => {
     // Same junctions in a different order are the same walk, so the key ignores start and order
     const key = kind + ':' + name.replace('Knooppunten ', '').split(' → ').sort().join('-');
     if (seen.has(key)) return;
@@ -562,17 +573,31 @@ async function fetchCandidates(c, R, lo, hi){
     const natureShare = share(pts, nature), urbanShare = share(pts, urban);
     const nearTown = places.some(p => km(p, start) < 1.5);
     if (natureShare < 0.6 || urbanShare > 0.02 || nearTown) return;
-    cands.push({key, kind, name, start, len, pts, natureShare, forestShare: share(pts, forests)});
+    cands.push({key, kind, name, start, len, pts, cells: cells || cellsOf(pts), natureShare, forestShare: share(pts, forests)});
   };
 
-  // Knooppunten loops: start from the junctions nearest the group
+  // Knooppunten loops. Starting junctions are spread over the whole search area (taken in turn from
+  // ~3 km squares, in random order), so the candidates don't all bunch up around the group's centre.
   const g = buildGraph(nodes, segs);
-  const starts = nodes.filter(n => g.adj.get(n.id)?.length).sort((x, y) => km(x, c) - km(y, c)).slice(0, 40);
+  const squares = new Map();
+  shuffle(nodes.filter(n => g.adj.get(n.id)?.length)).forEach(n => {
+    const k = Math.round(n.lat / 0.027) + ':' + Math.round(n.lon / 0.042);
+    if (!squares.has(k)) squares.set(k, []);
+    squares.get(k).push(n);
+  });
+  const starts = [], lists = [...squares.values()];
+  for (let round = 0; starts.length < 70 && lists.some(l => l.length > round); round++)
+    lists.forEach(l => { if (l[round] && starts.length < 70) starts.push(l[round]); });
   for (const n of starts) {
-    const ls = findLoops(g, n.id, lo, hi);
-    if (!ls.length) continue;
-    const l = ls[0], pts = loopPointsG(g, l);
-    addCand('loop', 'Knooppunten ' + loopRefsG(g, l, n.id), {lat:n.lat, lon:n.lon}, l.len, pts);
+    // Up to three clearly different loops from each junction
+    const taken = [];
+    for (const l of findLoops(g, n.id, lo, hi).slice(0, 15)) {
+      const pts = loopPointsG(g, l), cells = cellsOf(pts);
+      if (taken.some(t => overlap(t, cells) > 0.6)) continue;
+      taken.push(cells);
+      addCand('loop', 'Knooppunten ' + loopRefsG(g, l, n.id), {lat:n.lat, lon:n.lon}, l.len, pts, cells);
+      if (taken.length >= 3) break;
+    }
   }
   // GR/PR routes that return to where they start
   for (const r of routes) {
@@ -584,42 +609,66 @@ async function fetchCandidates(c, R, lo, hi){
 }
 
 // ---------- planning ----------
-function recentKeys(){
-  return new Set(state.walks.filter(w => w.status === 'proposed').slice(-4).map(w => w.key));
+// Walks already proposed before this batch (planned or walked), which new walks should differ from
+function recentWalks(before){
+  return state.walks.filter(w => w.status === 'proposed' && w.pts?.length && w.date < before).sort(byDate).slice(-6);
 }
-async function planWalk(date, cands, target, used){
+// ctx carries the batch: chosen walks, used keys, km driven per member so far, and recent walks
+async function planWalk(date, cands, target, cap, ctx){
   const ms = state.members, need = Math.ceil(ms.length / 2), time = state.settings.time || '10:00';
-  const recent = recentKeys();
-  const scored = cands.map(c => {
+  const others = [...ctx.chosen, ...ctx.recent];
+  const scored = [];
+  for (const c of cands) {
+    if (ctx.used.has(c.key)) continue;
     const road = ms.map(m => km(m, c.start) * ROAD);
     const ok = road.filter((r, i) => r <= ms[i].maxDrive).length;
-    const total = road.reduce((a, b) => a + b, 0);
-    // Green first: woods and fields count most, then keep the length and distance sensible
-    const score = ok * 100 - total * 0.5 - Math.abs(c.len - target) * 8 - (recent.has(c.key) ? 40 : 0)
-      + c.natureShare * 150 + c.forestShare * 30;
-    return {c, ok, score};
-  }).filter(x => x.ok >= need && !used.has(x.c.key)).sort((a, b) => b.score - a.score).slice(0, 6);
+    if (ok < need) continue;
+    if (ctx.chosen.some(o => overlap(c.cells, o.cells) > 0.4)) continue;   // never two near-identical walks in one batch
+    const similar = Math.max(0, ...others.map(o => overlap(c.cells, o.cells)));
+    const nearStarts = others.filter(o => km(c.start, o.start) < 2.5).length;
+    // Fairness: favour places that are close for whoever has driven the most so far in this batch
+    const heaviest = Math.max(...ms.map((m, i) => (ctx.driven[m.id] || 0) + road[i]));
+    const score = ok * 100
+      + c.natureShare * 150 + c.forestShare * 30          // green first
+      - Math.abs(c.len - target) * 25                      // close to this date's length
+      - Math.max(0, c.len - cap) * 60                      // over the group's shortest maximum
+      - road.reduce((a, b) => a + b, 0) * 0.4              // total driving
+      - heaviest * 1.5                                     // spread the driving over the season
+      - similar * 220 - nearStarts * 60;                   // different paths and areas
+    scored.push({c, score, road});
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, 10);
 
-  let windy = 0, best = null;
-  const wxs = await Promise.all(scored.map(x => fetchWeather(x.c.start.lat, x.c.start.lon, date, time)));
-  scored.forEach((x, i) => {
+  let windy = 0;
+  const wxs = await Promise.all(top.map(x => fetchWeather(x.c.start.lat, x.c.start.lon, date, time)));
+  const safe = [];
+  top.forEach((x, i) => {
     const wx = wxs[i];
     if (wx && wx.gust >= state.settings.gustCancel) { windy = Math.max(windy, wx.gust); return; }
     let s = x.score;
     if (wx && wx.gust >= state.settings.gustCaution) s -= x.c.forestShare * 80;   // windy: keep out of woods
     if (wx && wx.tmax >= 28) s -= 30;
-    if (!best || s > best.s) best = {...x, s, wx};
+    safe.push({...x, s, wx});
   });
   const base = {id:uid(), date, time};
-  if (!best) {
+  if (!safe.length) {
     const reason = windy ? `Gusts up to ${windy} km/h are forecast, over the ${state.settings.gustCancel} km/h limit.`
-      : 'No green walk fits most people\'s maximum drive.';
+      : 'No new green walk fits most people\'s maximum drive.';
     return {...base, status:'cancelled', reason, name:'No walk', key:'', members:[], dists:{}, wx:null};
   }
+  // Pick among the best four with a weighted chance, so planning again gives different walks
+  safe.sort((a, b) => b.s - a.s);
+  const pool = safe.slice(0, 4), weights = pool.map(x => Math.exp((x.s - pool[0].s) / 30));
+  let r = Math.random() * weights.reduce((a, b) => a + b, 0), best = pool[0];
+  for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) { best = pool[i]; break; } }
+
   const c = best.c;
   const roadRows = await drivingKm(ms, [c.start]);
   const dists = {};
-  ms.forEach((m, i) => dists[m.id] = roadRows ? roadRows[i][0] : km(m, c.start) * ROAD);
+  ms.forEach((m, i) => dists[m.id] = roadRows && roadRows[i][0] != null ? roadRows[i][0] : best.road[i]);
+  ms.forEach(m => ctx.driven[m.id] = (ctx.driven[m.id] || 0) + dists[m.id]);
+  ctx.chosen.push(c); ctx.used.add(c.key);
   return {...base, status:'proposed', reason:'', name:c.name, kind:c.kind, key:c.key,
     start:c.start, len:+c.len.toFixed(1), pts:c.pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]),
     natureShare:+c.natureShare.toFixed(2), forestShare:+c.forestShare.toFixed(2), wx:best.wx, dists, members:ms.map(m => m.id)};
@@ -631,9 +680,9 @@ async function buildCalendar(){
   building = true; $('#planBtn').disabled = true;
   try {
     const ms = state.members;
-    // Every walk is 5–8 km. Within that, aim near the shortest maximum the group has chosen.
+    // Every walk is 5–8 km, and preferably no longer than the shortest maximum in the group (at least 5)
     const lo = 5, hi = 8;
-    const target = Math.min(hi, Math.max(lo, Math.min(...ms.map(m => m.maxLen)) * 0.9));
+    const cap = Math.min(hi, Math.max(lo, Math.min(...ms.map(m => m.maxLen))));
     const R = Math.min(25000, Math.max(...ms.map(m => m.maxDrive)) * 1000);
     setProgress('Looking for knooppunten loops and GR/PR routes in nature around the group…', 0.08);
     const cands = await fetchCandidates(fairCenter(), R, lo, hi);
@@ -643,13 +692,15 @@ async function buildCalendar(){
     }
     const first = state.settings.startDate || nextSunday();
     const kept = state.walks.filter(w => w.date < first);
-    const fresh = [], used = new Set();   // a walk is used at most once in each batch
+    const fresh = [];
+    // Lengths vary from walk to walk across the comfortable range, in random order
+    const fracs = shuffle([0, 0.25, 0.5, 0.75, 1]);
+    const ctx = {used:new Set(), chosen:[], driven:{},
+      recent: recentWalks(first).map(w => ({cells:cellsOf(w.pts), start:w.start}))};
     for (let i = 0; i < state.settings.count; i++) {
-      const date = addDays(first, 14 * i);
+      const date = addDays(first, 14 * i), target = lo + (cap - lo) * fracs[i % fracs.length];
       setProgress(`Checking weather and distances for ${prettyDate(date)} (${i+1} of ${state.settings.count})…`, 0.2 + 0.8 * i / state.settings.count);
-      const w = await planWalk(date, cands, target, used);
-      if (w.key) used.add(w.key);
-      fresh.push(w);
+      fresh.push(await planWalk(date, cands, target, cap, ctx));
     }
     state.walks = [...kept, ...fresh];
     const ids = new Set(state.walks.map(w => w.id));
