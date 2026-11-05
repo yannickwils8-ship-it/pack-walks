@@ -78,3 +78,44 @@ Measured on the four cases (same seeds as step 2):
 - Slower everywhere: Zoniënwoud 5 → 7 s, Woluwe 4 → 6 s, Laeken 7–8 → 9–12 s, because of the much larger area to load and process.
 
 Verdict: **not kept** (no improvement, slower). The code is on the branch `experiment/step3-astar`. The larger radius belongs to the 36-attempt generator's geometry, so it will be tried again inside step 4 and only kept if it helps there.
+
+
+## Step 4: loop generator from the method — on hold until step 5
+
+What was built:
+
+- **Junction map:** every stretch between two junctions becomes one link, stored as numbered arrays (Laeken: 114,000 junctions instead of 447,000 map points). Same routes, much less work.
+- **36 independent attempts:** 12 directions × 3 shapes (triangle, square, wide), side = D / (legs × 1.35), × 0.8 for the square. Each waypoint is snapped to the nearest junction within 0.6 × side, otherwise the attempt is given up.
+- **Penalties so the walk doesn't retrace its steps:** a link already used costs ×6 per use; links within ~20 m of earlier legs (outside 150 m of the start and 100 m of the leg's end) cost up to ×5; retaking the first link out of the start costs ×20.
+- **Cleanup:** dead ends (a → b → a) and "antennas" (out and back the same way within 30 m) are removed; real loops stay.
+- **Length:** up to 3 tries; when more than 5% off, side × (D / length)^0.9.
+- **Start:** the nearest junction on a large connected part of the map.
+- **"Show 3 more":** next unseen options; when used up, 36 new attempts with the directions turned 15°.
+- **Choice of the 3 options unchanged** (closest to the distance, as before), so only the generator is measured here.
+
+The generator has no randomness, so both runs give the same result; one run per case is shown.
+
+| Case | Options: km (out & back, roundness) | Time |
+|---|---|---|
+| A Zoniënwoud 5 km | 5.08 (2%, 0.61) · 5.09 (2%, 0.50) · 4.84 (3%, 0.26) | 10 s |
+| B Meerdaalwoud 10 km | 10.05 (0%, 0.28) · 10.00 (1%, 0.36) · 10.10 knooppunten (5%, 0.38) | 12 s |
+| C Woluwe 5 km | 4.97 (19%, 0.33) · 5.05 (14%, 0.37) · 4.93 (17%, 0.41) | 8 s |
+| D Laeken 10 km | 10.04 (16%, 0.18) · 10.03 (21%, 0.53) · 9.95 (22%, 0.28) | 17 s |
+
+Compared with step 2:
+
+- **Distance:** every option within ±3% (step 2: up to 7%). In Zoniënwoud the official routes at −24% and +34% are no longer shown.
+- **Out & back:** Laeken better (16–22% vs 21–26%); Woluwe the same (14–19%); forests still very low.
+- **Roundness:** mixed (some 0.5–0.6, some 0.18–0.28).
+- **Time:** 2–3× slower (8–17 s vs 4–8 s).
+
+What all 36 loops look like (Woluwe 5 km): out & back median 14%, best 9%; roundness median 0.37; 7 of 36 are within 5% of the distance **and** at most 10% out & back. The current choice (closest distance only) doesn't pick those; the method's score in step 5 does exactly that.
+
+What was learned while building it:
+
+- **The "near earlier legs" penalty** helps a little in Laeken (median out & back 21% → 18%) and not in Woluwe (15% → 14%), and was the most expensive part. It was made 3× cheaper by preparing each link's points once and marking the 20 m zone in advance.
+- **Timing pitfall:** browsers stretch setTimeout pauses to a second or more in background tabs, which inflated early timings. The generator now pauses with a message channel, which isn't slowed down.
+- **Choosing the 3 options took 12.8 s** in Laeken because every loop was checked against every lead-only area (all nature reserves since step 1). Checking outline boxes first brought it to 1 s, with the same dog labels.
+- **Building the junction map** was sped up by counting neighbours directly.
+
+Verdict: **not published on its own** (2–3× slower for a modest gain). Kept on the branch `experiment/step4-generator`, to be measured together with step 5; if steps 4 + 5 together don't clearly beat step 2, both go.

@@ -1454,8 +1454,14 @@ const inArea = (pt, a) => a.closed ? a.rings.some(r => pip(pt, r))
   : pt[0] >= a.bb[0] && pt[0] <= a.bb[2] && pt[1] >= a.bb[1] && pt[1] <= a.bb[3];
 const fineCell = p => Math.round(p[0] / 0.0004) + ':' + Math.round(p[1] / 0.0006);   // ~45 m squares
 function dogInfo(pts, dog){
-  const sample = pts.filter((_, i) => i % 3 === 0 || i === pts.length - 1);
-  const touches = a => a.point ? sample.some(p => km(P(p), P(a.point)) < (a.radius || 0.15)) : sample.some(p => inArea(p, a));
+  const sample = pts.filter((_, i) => i % 3 === 0 || i === pts.length - 1), lb = bbOf(sample);
+  // Only areas whose outline box overlaps the walk's box can touch it; points are box-checked first too
+  const boxHit = (b, p) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+  const touches = a => {
+    if (a.point) return sample.some(p => km(P(p), P(a.point)) < (a.radius || 0.15));
+    if (a.bb[2] < lb[0] || a.bb[0] > lb[2] || a.bb[3] < lb[1] || a.bb[1] > lb[3]) return false;
+    return sample.some(p => boxHit(a.bb, p) && inArea(p, a));
+  };
   return {
     offLeash: dog.off.some(touches),
     leash: dog.leash.some(touches),
@@ -1617,44 +1623,244 @@ function dijkstra(G, src, dst, used){
   for (let cur = dst; cur !== src; ) { const p = prev.get(cur); edges.push(p.e); cur = p.from; nodes.push(cur); }
   return {nodes:nodes.reverse(), edges:edges.reverse()};
 }
-// A loop along paths: three waypoints on a circle that passes through the start, sized to the distance
-function buildTrailLoop(area, S, L, bearing){
-  const startId = nearestNode(area, S, false);
-  if (startId == null) return null;
-  const sc = area.coords.get(startId), s = {lat:sc[0], lon:sc[1]};
-  let r = L / (2 * Math.PI * 1.25), best = null;
-  for (let it = 0; it < 5; it++) {
-    const C = offset(s, r, bearing);
-    const seq = [startId, ...[1, 2, 3].map(k => nearestNode(area, offset(C, r, bearing + 180 + k * 90), true)), startId];
-    const used = new Set(), nodes = [startId];
-    let len = 0, reused = 0, wide = 0, ok = true;
-    for (let i = 1; i < seq.length; i++) {
-      const res = dijkstra(area.G, seq[i - 1], seq[i], used);
-      if (!res) { ok = false; break; }
-      res.edges.forEach(e => { if (used.has(e.eid)) reused += e.len; if (e.wide) wide += e.len; used.add(e.eid); len += e.len; });
-      nodes.push(...res.nodes.slice(1));
+// ---------- loop generator (method from a running app, field-tested in Belgium) ----------
+// The junction map: every stretch between two junctions becomes one link (map points in between are only
+// bends), which makes route finding 5–10× lighter with exactly the same routes. Built once per area.
+function junctionMap(area){
+  if (area.J) return area.J;
+  const G = area.G, C = area.coords, junction = new Set();
+  // A point with exactly two neighbours is a bend; anything else is a junction or a dead end.
+  // (Links are stored once per pair of points, so the list length is the number of neighbours.)
+  G.forEach((list, id) => { if (list.length !== 2) junction.add(id); });
+  const adj = new Map(), seenE = new Set(), put = (k, v) => (adj.get(k) || adj.set(k, []).get(k)).push(v);
+  let n = 0;
+  for (const j of junction) for (const e0 of G.get(j)) {
+    if (seenE.has(e0.eid)) continue;
+    const nodes = [j];
+    let len = 0, cost = 0, wide = 0, prev = j, e = e0;
+    for (;;) {
+      seenE.add(e.eid); len += e.len; cost += e.cost; if (e.wide) wide += e.len; nodes.push(e.to);
+      if (junction.has(e.to)) break;
+      const next = G.get(e.to).find(x => x.to !== prev);   // the other side of a bend
+      if (!next || seenE.has(next.eid)) break;
+      prev = e.to; e = next;
     }
-    if (!ok || len < 0.5) break;
-    const cand = {start:s, len, wide:wide / len, pts:nodes.map(id => area.coords.get(id)), score:Math.abs(len - L) / L + reused / len};
-    if (!best || cand.score < best.score) best = cand;
-    if (Math.abs(len - L) / L < 0.05) break;
-    r *= Math.max(0.5, Math.min(1.8, L / len));
+    const b = nodes.at(-1);
+    if (!junction.has(b) || b === j && nodes.length < 4) continue;
+    const link = {id:n++, a:j, b, len, cost, wide, nodes};
+    put(j, {link, to:b, fwd:true}); put(b, {link, to:j, fwd:false});
+  }
+  const S = 0.005, grid = new Map();   // junctions per ~500 m square, for nearest-junction searches
+  for (const j of adj.keys()) { const p = C.get(j), k = Math.floor(p[0] / S) * 100000 + Math.floor(p[1] / S); (grid.get(k) || grid.set(k, []).get(k)).push(j); }
+  // The same map as numbered arrays, which browsers search much faster than lookups by map ID
+  const ids = [...adj.keys()], idx = new Map(ids.map((id, i) => [id, i])), links = new Array(n);
+  const off = new Int32Array(ids.length + 1);
+  ids.forEach((id, i) => { off[i + 1] = off[i] + adj.get(id).length; });
+  const arcTo = new Int32Array(off[ids.length]), arcFrom = new Int32Array(off[ids.length]), arcLink = new Int32Array(off[ids.length]), arcFwd = new Uint8Array(off[ids.length]);
+  ids.forEach((id, i) => adj.get(id).forEach((a, k) => {
+    const at = off[i] + k;
+    arcTo[at] = idx.get(a.to); arcFrom[at] = i; arcLink[at] = a.link.id; arcFwd[at] = a.fwd ? 1 : 0; links[a.link.id] = a.link;
+  }));
+  const linkCost = new Float64Array(n);
+  links.forEach(l => {
+    linkCost[l.id] = l.cost;
+    // each link's points and their ~10 m squares, prepared once for the "near earlier legs" check
+    l.xy = new Float64Array(l.nodes.length * 2); l.cells = new Float64Array(l.nodes.length);
+    l.nodes.forEach((id, i) => { const p = C.get(id); l.xy[2 * i] = p[0]; l.xy[2 * i + 1] = p[1]; l.cells[i] = c10(p); });
+  });
+  return area.J = {adj, grid, S, links, idx, ids, off, arcTo, arcFrom, arcLink, arcFwd, linkCost,
+    // work space reused by every search; a "stamp" marks which entries belong to the current search
+    dist:new Float64Array(ids.length), prev:new Int32Array(ids.length), seen:new Int32Array(ids.length),
+    uses:new Int32Array(n), cf:new Float32Array(n), cfSeen:new Int32Array(n), stamp:0, legStamp:0};
+}
+const POW6 = [1, 6, 36, 216, 1296, 7776, 46656];
+// Nearest junction to p within maxKm, only among `comp` (the start's connected part)
+function nearestJunction(area, J, p, maxKm, comp){
+  const dLat = maxKm / 111.32, dLon = maxKm / (111.32 * Math.cos(p.lat * Math.PI / 180));
+  let best = null, bd = maxKm;
+  for (let y = Math.floor((p.lat - dLat) / J.S); y <= Math.floor((p.lat + dLat) / J.S); y++)
+    for (let x = Math.floor((p.lon - dLon) / J.S); x <= Math.floor((p.lon + dLon) / J.S); x++)
+      for (const j of J.grid.get(y * 100000 + x) || []) {
+        if (comp && !comp.has(j)) continue;
+        const d = km(p, P(area.coords.get(j)));
+        if (d <= bd) { bd = d; best = j; }
+      }
+  return best;
+}
+// Start junction: the nearest one on a large connected part of the map (not an isolated path)
+function startJunction(area, J, S){
+  let best = null;
+  for (const r of [0.2, 0.5, 1, 2]) {
+    const cands = [];
+    const dLat = r / 111.32, dLon = r / (111.32 * Math.cos(S.lat * Math.PI / 180));
+    for (let y = Math.floor((S.lat - dLat) / J.S); y <= Math.floor((S.lat + dLat) / J.S); y++)
+      for (let x = Math.floor((S.lon - dLon) / J.S); x <= Math.floor((S.lon + dLon) / J.S); x++)
+        for (const j of J.grid.get(y * 100000 + x) || []) { const d = km(S, P(area.coords.get(j))); if (d <= r) cands.push([d, j]); }
+    cands.sort((a, b) => a[0] - b[0]);
+    for (const [, j] of cands.slice(0, 15)) {
+      if (best && best.comp.has(j)) continue;
+      const comp = new Set([j]), todo = [j];
+      while (todo.length) for (const a of J.adj.get(todo.pop()) || []) if (!comp.has(a.to)) { comp.add(a.to); todo.push(a.to); }
+      if (!best || comp.size > best.comp.size) best = {s0:j, comp};
+      if (comp.size > 500) return best;
+    }
   }
   return best;
+}
+// ~10 m squares, used for "within 20 m of where the walk has already been" and "within 30 m of the way out"
+const c10 = p => Math.round(p[0] / 0.00009) * 1e6 + Math.round(p[1] / 0.00014);
+const near10 = (cells, p, r = 1) => {
+  const a = Math.round(p[0] / 0.00009), b = Math.round(p[1] / 0.00014);
+  for (let da = -r; da <= r; da++) for (let db = -r; db <= r; db++) if (cells.has((a + da) * 1e6 + b + db)) return true;
+  return false;
+};
+function densify10(pts){
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.sqrt(d2(a, b)) * 111.32 * 100));
+    for (let k = 1; k <= n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+  }
+  return out;
+}
+// One leg of a loop on the junction map. Penalties so the walk doesn't retrace its steps:
+// a link already taken costs ×6 per time used; links running within 20 m of earlier legs (outside 150 m of
+// the start and of this leg's end) cost up to ×5; retaking the very first link out of the start costs ×20.
+const DEG2_150M = (0.15 / 111.32) ** 2, DEG2_100M = (0.1 / 111.32) ** 2;   // squared distances in d2() units
+function loopLeg(area, J, src, dst, st){
+  const C = area.coords, end = C.get(dst), s = J.idx.get(src), t = J.idx.get(dst);
+  const {off, arcTo, arcLink, arcFwd, arcFrom, linkCost, uses, cf, cfSeen, dist, prev, seen, links} = J;
+  const leg = ++J.legStamp, run = ++J.stamp, useCorridor = st.corridor.size > 0;
+  const s0 = st.start[0], s1 = st.start[1], e0 = end[0], e1 = end[1];
+  const corridor = l => {
+    if (!useCorridor) return 1;
+    if (cfSeen[l] === leg) return cf[l];
+    const {xy, cells} = links[l];
+    let inside = 0, count = 0;
+    for (let i = 0; i < cells.length; i++) {
+      const la = xy[2 * i], lo = xy[2 * i + 1];
+      if ((la - s0) ** 2 + ((lo - s1) * 0.64) ** 2 < DEG2_150M || (la - e0) ** 2 + ((lo - e1) * 0.64) ** 2 < DEG2_100M) continue;
+      count++;
+      if (st.corridor.has(cells[i])) inside++;   // the corridor is stored already widened to ~20 m
+    }
+    cfSeen[l] = leg;
+    return cf[l] = count ? 1 + 4 * inside / count : 1;
+  };
+  const heap = new MinHeap();
+  dist[s] = 0; seen[s] = run; prev[s] = -1; heap.push(0, s);
+  while (heap.size) {
+    const [d, u] = heap.pop();
+    if (u === t) break;
+    if (d > dist[u]) continue;
+    for (let k = off[u]; k < off[u + 1]; k++) {
+      const l = arcLink[k], v = arcTo[k];
+      let w = linkCost[l] * (POW6[uses[l]] || 1e6) * corridor(l);
+      if (l === st.firstLink) w *= 20;
+      const nd = d + w;
+      if (seen[v] !== run || nd < dist[v]) { seen[v] = run; dist[v] = nd; prev[v] = k; heap.push(nd, v); }
+    }
+  }
+  if (s !== t && seen[t] !== run) return null;
+  const arcs = [];
+  for (let cur = t; cur !== s; cur = arcFrom[prev[cur]]) arcs.push(prev[cur]);
+  arcs.reverse();
+  const nodes = [src];
+  for (const k of arcs) { const ln = links[arcLink[k]].nodes; nodes.push(...(arcFwd[k] ? ln : [...ln].reverse()).slice(1)); }
+  return {arcs, nodes};
+}
+// Cleanup: remove dead ends (a → b → a), then "antennas": a stretch that leaves a point and comes back to
+// it the same way (every point of the way back within 30 m of the way out). A real loop stays.
+function cleanLoop(nodes, C){
+  const out = [];
+  for (const id of nodes) { if (out.length >= 2 && out[out.length - 2] === id) out.pop(); else out.push(id); }
+  for (let changed = true; changed; ) {
+    changed = false;
+    const seen = new Map();
+    for (let j = 0; j < out.length && !changed; j++) {
+      const i = seen.get(out[j]);
+      if (i != null && j - i >= 3 && !(i === 0 && j === out.length - 1)) {
+        const seg = out.slice(i, j + 1).map(id => C.get(id)), p0 = seg[0];
+        let k = 0, far = -1;
+        seg.forEach((p, m) => { const d = d2(p, p0); if (d > far) { far = d; k = m; } });
+        const outward = new Set(densify10(seg.slice(0, k + 1)).map(c10));
+        if (densify10(seg.slice(k)).every(p => near10(outward, p, 2))) { out.splice(i + 1, j - i); changed = true; }
+      }
+      if (!changed) seen.set(out[j], j);
+    }
+  }
+  return out;
+}
+// One attempt: waypoints around the start in direction theta (radians), in one of three shapes.
+// Distance of the waypoints: side = D / (number of legs × 1.35), × 0.8 for the square; each is snapped to
+// the nearest junction within 0.6 × side, otherwise the attempt is given up. Up to 3 tries to hit the
+// distance: when more than 5% off, side × (D / length)^0.9.
+const LOOP_SHAPES = {triangle:[0, Math.PI / 3], square:[-Math.PI / 4, 0, Math.PI / 4], wide:[-0.5, 0.5]};
+function loopAttempt(area, J, s0, comp, D, theta, shape){
+  const C = area.coords, sp = C.get(s0), S = P(sp), angles = LOOP_SHAPES[shape];
+  let side = D / ((angles.length + 1) * 1.35) * (shape === 'square' ? 0.8 : 1), best = null;
+  for (let it = 0; it < 3; it++) {
+    const wps = [];
+    for (const a of angles) {
+      const j = nearestJunction(area, J, offset(S, side, (theta + a) * 180 / Math.PI), 0.6 * side, comp);
+      if (j == null) return best;
+      wps.push(j);
+    }
+    const seq = [s0, ...wps, s0], st = {corridor:new Set(), firstLink:-1, start:sp}, touched = [];
+    let nodes = [s0], ok = true;
+    for (let i = 1; i < seq.length && ok; i++) {
+      const leg = loopLeg(area, J, seq[i - 1], seq[i], st);
+      if (!leg) { ok = false; break; }
+      leg.arcs.forEach((k, m) => { const l = J.arcLink[k]; J.uses[l]++; touched.push(l); if (i === 1 && m === 0) st.firstLink = l; });
+      nodes.push(...leg.nodes.slice(1));
+      // Mark the ~10 m squares within about 20 m of this leg (each square and its 8 neighbours)
+      for (const p of densify10(leg.nodes.map(id => C.get(id)))) {
+        if (d2(p, sp) < DEG2_150M) continue;
+        const a = Math.round(p[0] / 0.00009), b = Math.round(p[1] / 0.00014);
+        for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) st.corridor.add((a + da) * 1e6 + b + db);
+      }
+    }
+    for (const l of touched) J.uses[l] = 0;   // counts are per attempt
+    if (!ok) return best;
+    nodes = cleanLoop(nodes, C);
+    const pts = nodes.map(id => C.get(id)), len = lineKm(pts);
+    if (len < 0.5) return best;
+    if (!best || Math.abs(len - D) < Math.abs(best.len - D)) best = {start:S, len, pts, nodes};
+    if (Math.abs(len - D) / D < 0.05) break;
+    side *= Math.pow(D / len, 0.9);
+  }
+  return best;
+}
+// Share of a loop on wide ways (tracks, service roads…), easier with a group of dogs
+function wideShare(area, nodes){
+  let w = 0, t = 0;
+  for (let i = 1; i < nodes.length; i++) {
+    const e = (area.G.get(nodes[i - 1]) || []).find(x => x.to === nodes[i]);
+    if (e) { t += e.len; if (e.wide) w += e.len; }
+  }
+  return t ? w / t : 0;
+}
+// Lets the page redraw between attempts. A message channel isn't slowed down when the tab is in the
+// background, unlike setTimeout, which browsers stretch to a second or more there.
+const breather = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
+// 36 independent attempts: 12 directions (every 30°, turned by `shift` degrees) × 3 shapes
+async function generateLoops(c, shift = 0){
+  const area = c.area, J = junctionMap(area);
+  c.startJ = c.startJ || startJunction(area, J, c.origin);
+  if (!c.startJ) return [];
+  const out = [];
+  let n = 0;
+  for (let d = 0; d < 12; d++) for (const shape of Object.keys(LOOP_SHAPES)) {
+    const t = loopAttempt(area, J, c.startJ.s0, c.startJ.comp, c.L, (d * 30 + shift) * Math.PI / 180, shape);
+    if (t) out.push({kind:'trail', name:'Trail loop', start:t.start, len:t.len, pts:t.pts, nodes:t.nodes, wide:wideShare(area, t.nodes)});
+    if (++n % 3 === 0) { cStatus(`Trying loop ${n} of 36…`); await breather(); }
+  }
+  return out;
 }
 // ---------- three options per place ----------
 const OPT_COLORS = ['#d9480f', '#1c7ed6', '#7048e8'];
 const KIND_LABEL = {route:'Official route', loop:'Knooppunten loop', trail:'Trail loop'};
-function trailOption(c){
-  for (let tries = 0; tries < 3; tries++) {
-    const t = buildTrailLoop(c.area, c.origin, c.L, c.bearing + (rand() * 2 - 1) * c.spread);
-    if (t) return {kind:'trail', name:'Trail loop', start:t.start, len:t.len, pts:t.pts, wide:t.wide};
-  }
-  return null;
-}
 // Everything walkable from here: official marked routes that loop, knooppunten loops (also somewhat
 // shorter or longer than asked, as alternatives) and trail loops heading out in different directions
-function gatherOptions(c){
+async function gatherOptions(c){
   const {area, origin, L} = c, pool = [], o = [origin.lat, origin.lon];
   for (const r of area.routes) {
     const pts = chainWays(r.ways, r.ways[0][0]);
@@ -1674,7 +1880,7 @@ function gatherOptions(c){
     for (const n of starts) for (const l of findLoops(g, n.id, Math.max(2, L * 0.6), L * 1.5).slice(0, 12))
       pool.push({kind:'loop', name:'Knooppunten ' + loopRefsG(g, l, n.id), start:{lat:n.lat, lon:n.lon}, len:l.len, pts:loopPointsG(g, l)});
   }
-  for (let i = 0; i < 4; i++) { const t = trailOption(c); if (t) pool.push(t); }
+  pool.push(...await generateLoops(c));
   return pool;
 }
 // The best three that differ from each other and from options shown before: closest to the distance,
@@ -1723,7 +1929,7 @@ async function createLoop(){
     cStatus(`Building routes of about ${fmtKm(L)}…`);
     await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
     cr.ctx = {area, origin, place, bearing, spread, L, outline};
-    cr.pool = gatherOptions(cr.ctx);
+    cr.pool = await gatherOptions(cr.ctx);
     cr.shown = [];
     cr.options = pickOptions(cr.ctx, cr.pool, cr.shown);
     if (!cr.options.length) throw new Error('No walkable loop found here. Try another start point.');
@@ -1736,15 +1942,19 @@ async function createLoop(){
     cr.busy = false; $('#createBtn').disabled = false; cStatus('');
   }
 }
-function moreOptions(){
+// The next three not shown yet; when those run out, 36 new attempts with the directions turned by 15°
+async function moreOptions(){
   const btn = $('#cMore'); btn.disabled = true; btn.textContent = 'Finding…';
-  setTimeout(() => {
-    for (let i = 0; i < 3; i++) { const t = trailOption(cr.ctx); if (t) cr.pool.push(t); }
-    const next = pickOptions(cr.ctx, cr.pool, cr.shown);
-    if (!next.length) { toast('No other routes found here.'); btn.disabled = false; btn.textContent = 'Show 3 more'; return; }
-    cr.options = next; cr.shown.push(...next); cr.sel = 0; cr.current = next[0];
-    renderCreate(); renderMap(); fitCreate();
-  }, 30);
+  let next = pickOptions(cr.ctx, cr.pool, cr.shown);
+  if (!next.length) {
+    cr.ctx.shift = (cr.ctx.shift || 0) + 15;
+    cr.pool.push(...await generateLoops(cr.ctx, cr.ctx.shift));
+    cStatus('');
+    next = pickOptions(cr.ctx, cr.pool, cr.shown);
+  }
+  if (!next.length) { toast('No other routes found here.'); btn.disabled = false; btn.textContent = 'Show 3 more'; return; }
+  cr.options = next; cr.shown.push(...next); cr.sel = 0; cr.current = next[0];
+  renderCreate(); renderMap(); fitCreate();
 }
 function selectOption(i){ cr.sel = i; cr.current = cr.options[i]; renderCreate(); renderMap(); }
 function fitCreate(onlySelected){
