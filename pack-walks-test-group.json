@@ -1,46 +1,18 @@
 {
   "me": null,
   "members": [
-    {
-      "id": "test-anna",
-      "name": "Test Anna",
-      "town": "9000 Gent",
-      "lat": 51.0543,
-      "lon": 3.7174,
-      "dog": {"name": "Bo", "size": "M", "lead": false, "notes": ""},
-      "maxDrive": 20,
-      "maxLen": 7
-    },
-    {
-      "id": "test-jan",
-      "name": "Test Jan",
-      "town": "3000 Leuven",
-      "lat": 50.8798,
-      "lon": 4.7005,
-      "dog": {"name": "Mimi", "size": "S", "lead": true, "notes": "scared of bikes"},
-      "maxDrive": 25,
-      "maxLen": 8
-    },
-    {
-      "id": "test-sofie",
-      "name": "Test Sofie",
-      "town": "2800 Mechelen",
-      "lat": 51.0259,
-      "lon": 4.4776,
-      "dog": {"name": "Rocky", "size": "L", "lead": false, "notes": ""},
-      "maxDrive": 15,
-      "maxLen": 6
-    },
-    {
-      "id": "test-luc",
-      "name": "Test Luc",
-      "town": "3500 Hasselt",
-      "lat": 50.9307,
-      "lon": 5.3325,
-      "dog": {"name": "Nala", "size": "M", "lead": false, "notes": "no other dogs"},
-      "maxDrive": 25,
-      "maxLen": 7
-    }
+    {"id": "test-kampenhout-1", "name": "Test Kampenhout 1", "town": "1910 Kampenhout", "lat": 50.9413, "lon": 4.5607,
+     "dog": {"name": "Test dog 1", "size": "M", "lead": false, "notes": ""}, "maxDrive": 20, "maxLen": 7},
+    {"id": "test-kampenhout-2", "name": "Test Kampenhout 2", "town": "1910 Kampenhout", "lat": 50.9413, "lon": 4.5607,
+     "dog": {"name": "Test dog 2", "size": "L", "lead": false, "notes": "no other dogs"}, "maxDrive": 25, "maxLen": 8},
+    {"id": "test-kampenhout-3", "name": "Test Kampenhout 3", "town": "1910 Kampenhout", "lat": 50.9413, "lon": 4.5607,
+     "dog": {"name": "Test dog 3", "size": "S", "lead": true, "notes": "scared of bikes"}, "maxDrive": 15, "maxLen": 6},
+    {"id": "test-woluwe", "name": "Test Woluwe", "town": "1200 Sint-Lambrechts-Woluwe", "lat": 50.8479, "lon": 4.4316,
+     "dog": {"name": "Test dog 4", "size": "M", "lead": true, "notes": ""}, "maxDrive": 20, "maxLen": 7},
+    {"id": "test-villers", "name": "Test Villers-la-Ville", "town": "Villers-la-Ville", "lat": 50.5797, "lon": 4.5265,
+     "dog": {"name": "Test dog 5", "size": "L", "lead": false, "notes": ""}, "maxDrive": 25, "maxLen": 8},
+    {"id": "test-laeken", "name": "Test Laeken", "town": "1020 Laken", "lat": 50.8881, "lon": 4.3508,
+     "dog": {"name": "Test dog 6", "size": "S", "lead": false, "notes": ""}, "maxDrive": 20, "maxLen": 6}
   ],
   "walks": [],
   "rsvp": {},
@@ -49,6 +21,7 @@
     "gustCancel": 60,
     "startDate": "",
     "count": 6,
-    "time": "10:00"
+    "time": "10:00",
+    "createKm": 6
   }
 }

@@ -7,8 +7,7 @@ Pack Walks helps a small group of dog owners in Belgium pick a green walk every 
 | File | What it is |
 |---|---|
 | `index.html` | The app. Open it in a browser (Chrome, Edge or Firefox). |
-| `pack-walks-group-belgium.json` | Eleven test members around Brussels (Kampenhout, Sterrebeek, Woluwe, Perk, Jette, Elsene, Tervuren, Overijse, Steenokkerzeel, Zaventem, Melsbroek). Not real people. |
-| `pack-walks-test-group.json` | Four older test members (Gent, Leuven, Mechelen, Hasselt). |
+| `pack-walks-test-group.json` | Six test members: three in Kampenhout, one each in Woluwe (Sint-Lambrechts-Woluwe), Villers-la-Ville and Laeken. Not real people. |
 | `README.md` | This documentation. |
 | `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png` | Let phones install the app on the home screen. |
 | `tools/build_data.py` | Builds the walk data the app uses (see "Walk data" below). |
@@ -71,7 +70,7 @@ On a phone the navigation sits at the bottom, and the map has its own **Map** ta
 ## Quick start with the test group
 
 1. Double-click `index.html`.
-2. Go to **Settings → Import file** and pick `pack-walks-group-belgium.json`. This replaces everything saved in that browser.
+2. Go to **Settings → Import file** and pick `pack-walks-test-group.json`. This replaces everything saved in that browser.
 3. Still in Settings, press **Re-locate towns**. It looks up each town by name so the map shows the right places. It takes about a minute.
 4. Go to **Me** and tap a name under **Who are you?**
 5. Go to **Walks** and press **Plan walks**. A progress bar shows each step.
