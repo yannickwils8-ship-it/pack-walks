@@ -107,6 +107,12 @@ On a phone the navigation sits at the bottom, and the map has its own **Map** ta
   - gusts of **45 km/h or more** steer walks away from woods,
   - forecasts reach 16 days ahead, so later walks say "Forecast not out yet".
 
+## Off-leash zones
+
+All official Natuur en Bos off-leash zones (hondenzones) in Flanders are always on the map, as green dots with a paw. Tap one to see its name and area, then **Create a walk from here**. The app builds three loops that start and end at the zone, using the distance set in Create, so the dogs can run free at the start and the end.
+
+Planned walks that pass within 400 m of a zone rank a bit higher and show "Off-leash zone on the way". The WhatsApp message mentions it too.
+
 ## Create a walk
 
 Make a loop yourself, for any day.

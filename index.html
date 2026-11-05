@@ -240,6 +240,11 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
 .lg-off{width:12px;height:12px;border-radius:3px;background:#40c057;border:1.5px solid #2b8a3e}
 .lg-lead{width:12px;height:12px;border-radius:3px;border:1.5px dashed #e8a33d}
 .lg-ban{width:12px;height:12px;border-radius:3px;background:rgba(224,49,49,.35);border:1.5px solid #e03131}
+.zone-pin span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#2b8a3e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.zone-pin svg{width:15px;height:15px;fill:#fff}
+.lg-zone{width:12px;height:12px;border-radius:50%;background:#2b8a3e;border:2px solid #fff;box-shadow:0 0 0 1px #2b8a3e}
+.zone-pop b{display:block;font-size:14px}
+.zone-pop small{display:block;color:#5d6b63;margin:2px 0 8px}
 .lg-water{width:10px;height:10px;border-radius:50%;background:#1c7ed6;border:2px solid #fff;box-shadow:0 0 0 1px #1c7ed6}
 
 /* ---------- map ---------- */
@@ -721,6 +726,7 @@ async function planDataLive(c, R){
 }
 async function fetchCandidates(c, R, lo, hi){
   const {nodes, segs, routes, forests, places, urban, nature} = await hasData() ? await planDataTiles(c, R) : await planDataLive(c, R);
+  const zones = (await anbData()).zones;
   const cands = [], seen = new Set();
   // Share of the route's points that lie inside any of the given map areas (bounding boxes)
   const ix = new Map([[nature, boxIndex(nature)], [urban, boxIndex(urban)], [forests, boxIndex(forests)]]);
@@ -735,7 +741,9 @@ async function fetchCandidates(c, R, lo, hi){
     const natureShare = share(pts, nature), urbanShare = share(pts, urban);
     const nearTown = places.some(p => p.size !== 'h' && km(p, start) < (p.size === 'v' ? 0.7 : 1.5));
     if (natureShare < 0.45 || urbanShare > 0.25 || nearTown) return;
-    cands.push({key, kind, name, start, len, pts, cells: cells || cellsOf(pts), natureShare, urbanShare, forestShare: share(pts, forests)});
+    // An official off-leash zone within 400 m of the route, so the dogs can run free on the way
+    const zone = zones.find(z => pts.some((p, i) => i % 4 === 0 && Math.abs(p[0] - z[2]) < 0.005 && km(P(p), {lat:z[2], lon:z[3]}) < 0.4));
+    cands.push({key, kind, name, start, len, pts, cells: cells || cellsOf(pts), natureShare, urbanShare, forestShare: share(pts, forests), zone: zone ? zone[0] : null});
   };
 
   // Knooppunten loops. Starting junctions are spread over the whole search area (taken in turn from
@@ -792,6 +800,7 @@ async function planWalk(date, cands, target, cap, ctx){
     const heaviest = Math.max(...ms.map((m, i) => (ctx.driven[m.id] || 0) + road[i]));
     const score = ok * 100
       + c.natureShare * 150 + c.forestShare * 30 - c.urbanShare * 150   // green first, towns last
+      + (c.zone ? 25 : 0)                                  // passes an off-leash zone
       - Math.abs(c.len - target) * 25                      // close to this date's length
       - Math.max(0, c.len - cap) * 60                      // over the group's shortest maximum
       - road.reduce((a, b) => a + b, 0) * 0.4              // total driving
@@ -833,7 +842,8 @@ async function planWalk(date, cands, target, cap, ctx){
   ctx.chosen.push(c); ctx.used.add(c.key);
   return {...base, status:'proposed', reason:'', name:c.name, kind:c.kind, key:c.key,
     start:c.start, len:+c.len.toFixed(1), pts:c.pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]),
-    natureShare:+c.natureShare.toFixed(2), forestShare:+c.forestShare.toFixed(2), wx:best.wx, dists, members:ms.map(m => m.id)};
+    natureShare:+c.natureShare.toFixed(2), forestShare:+c.forestShare.toFixed(2), wx:best.wx, dists, members:ms.map(m => m.id),
+    offLeash:c.zone || null};
 }
 let building = false;
 async function buildCalendar(){
@@ -934,6 +944,7 @@ function shareText(w){
     `🌲 ${walkTitle(w)} · ${w.len} km`];
   const j = junctions(w);
   if (j) lines.push(`🔢 Follow junctions: ${j.join(' → ')}`);
+  if (w.offLeash) lines.push(`🐾 Off-leash zone on the way: ${zoneName(w.offLeash)}`);
   lines.push(`📍 Start: https://www.google.com/maps/search/?api=1&query=${w.start.lat},${w.start.lon}`);
   if (w.wx) lines.push(`${wxIcon(w.wx.code)} ${w.wx.tmin}–${w.wx.tmax}°C, gusts ${w.wx.gust} km/h`);
   lines.push('Answer in Pack Walks: Join / Maybe / Can\'t');
@@ -996,6 +1007,26 @@ function fitMap(what){
   if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
 }
 $('#fitBtn').onclick = () => fitMap('all');
+
+// Official Natuur en Bos off-leash zones, always on the map; each can be the start of a walk
+const zoneName = n => String(n).replace(/^Hondenzone\s*/i, '') || n;
+const zoneLayer = L.layerGroup().addTo(map);
+const PAW = '<svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="21" rx="7" ry="6"/><circle cx="7.5" cy="13.5" r="3"/><circle cx="12.5" cy="8" r="3"/><circle cx="19.5" cy="8" r="3"/><circle cx="24.5" cy="13.5" r="3"/></svg>';
+anbData().then(anb => anb.zones.forEach((z, i) =>
+  L.marker([z[2], z[3]], {icon:L.divIcon({className:'zone-pin', html:`<span>${PAW}</span>`, iconSize:[26,26], iconAnchor:[13,13]}), zIndexOffset:-200, title:'Off-leash zone ' + zoneName(z[0])})
+    .bindPopup(`<div class="zone-pop"><b>Off-leash zone ${esc(zoneName(z[0]))}</b>
+      <small>${z[1] && z[1] !== zoneName(z[0]) ? esc(z[1]) + ' · ' : ''}Natuur en Bos: dogs may run free here</small>
+      <button class="btn small primary" data-zone="${i}">Create a walk from here</button></div>`)
+    .addTo(zoneLayer)));
+map.getContainer().addEventListener('click', async e => {
+  const b = e.target.closest('[data-zone]');
+  if (!b) return;
+  const z = (await anbData()).zones[+b.dataset.zone];
+  map.closePopup();
+  cr.mode = 'point'; cr.point = {lat:z[2], lon:z[3]}; cr.pointName = 'off-leash zone ' + zoneName(z[0]);
+  cr.current = null; cr.options = [];
+  renderCreate(); setView('create'); createLoop();
+});
 
 // ---------- walks view ----------
 function renderWalks(){
@@ -1065,6 +1096,7 @@ function heroHTML(w){
   return `<article class="hero">${top}<div class="hero-body">
     <div>
       <div class="walk-title">${esc(walkTitle(w))}</div>
+      ${w.offLeash ? `<div class="chips" style="margin-top:8px"><span class="chip good">Off-leash zone on the way: ${esc(zoneName(w.offLeash))}</span></div>` : ''}
       ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
     </div>
     <div class="stats">${stats.map(([k, v, sub]) => `<div class="stat"><small>${k}</small><b>${v}</b><span>${esc(sub)}</span></div>`).join('')}</div>
@@ -1631,7 +1663,7 @@ async function createLoop(){
       origin = park || pl;
       // From a parking at the edge, head into the area
       if (park && km(park, pl) > 0.3) { bearing = bearingTo(park, pl); spread = 60; }
-    } else origin = cr.point;
+    } else { origin = cr.point; place = cr.pointName || null; }
     const r0 = L / (2 * Math.PI * 1.25);
     cStatus('Loading paths, tracks and knooppunten around the start…');
     const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
@@ -1667,9 +1699,9 @@ function fitCreate(onlySelected){
   if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
   else if (cr.point) map.setView([cr.point.lat, cr.point.lon], 14);
 }
-const LEGEND_PLAN = '<span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span>';
+const LEGEND_PLAN = '<span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span><span><i class="lg-zone"></i>Off-leash zone</span>';
 const LEGEND_CREATE = `<span><i class="lg-route"></i>1</span><span><i class="lg-route" style="background:${OPT_COLORS[1]}"></i>2</span><span><i class="lg-route" style="background:${OPT_COLORS[2]}"></i>3</span>` +
-  '<span><i class="lg-off"></i>Off-leash zone</span><span><i class="lg-lead"></i>Lead only</span><span><i class="lg-ban"></i>No dogs</span><span><i class="lg-water"></i>Water</span>';
+  '<span><i class="lg-zone"></i>Off-leash zone</span><span><i class="lg-lead"></i>Lead only</span><span><i class="lg-ban"></i>No dogs</span><span><i class="lg-water"></i>Water</span>';
 function drawCreate(){
   const d = cr.ctx?.area.dog;
   if (cr.ctx?.outline && cr.options.length)
@@ -1677,7 +1709,7 @@ function drawCreate(){
   if (d && cr.options.length) {
     // Dog-friendly layer: off-leash zones, lead-only and no-dog areas, paths closed to dogs, drinking water
     const shape = (a, style) => a.closed ? L.polygon(a.rings, style) : L.featureGroup(a.rings.map(r => L.polyline(r, style)));
-    d.off.forEach(a => (a.point ? L.circleMarker(a.point, {radius:7, color:'#2b8a3e', weight:2, fillColor:'#40c057', fillOpacity:.85})
+    d.off.filter(a => !a.radius).forEach(a => (a.point ? L.circleMarker(a.point, {radius:7, color:'#2b8a3e', weight:2, fillColor:'#40c057', fillOpacity:.85})
       : shape(a, {color:'#2b8a3e', weight:1.5, fillColor:'#40c057', fillOpacity:.3})).bindTooltip('Off-leash zone' + (a.name ? ': ' + esc(a.name) : '')).addTo(walkLayer));
     d.leash.forEach(a => shape(a, {color:'#e8a33d', weight:1.5, dashArray:'5 5', fillColor:'#e8a33d', fillOpacity:.06}).bindTooltip('Dogs on a lead').addTo(walkLayer));
     d.ban.forEach(a => shape(a, {color:'#e03131', weight:1.5, fillColor:'#e03131', fillOpacity:.22}).bindTooltip('No dogs allowed').addTo(walkLayer));
@@ -1711,7 +1743,7 @@ function renderCreate(){
   $('#cmPoint').hidden = cr.mode !== 'point';
   $('#pickBtn').hidden = !isPhone();
   $('#pickHint').innerHTML = cr.point
-    ? `Start: <b>${cr.point.lat.toFixed(4)}, ${cr.point.lon.toFixed(4)}</b>. ${isPhone() ? 'Tap “Choose on map”' : 'Click the map'} to move it.`
+    ? `Start: <b>${cr.pointName ? esc(cr.pointName) : cr.point.lat.toFixed(4) + ', ' + cr.point.lon.toFixed(4)}</b>. ${isPhone() ? 'Tap “Choose on map”' : 'Click the map'} to move it.`
     : isPhone() ? 'Tap “Choose on map”, then tap where the walk should start.' : 'Click the map where the walk should start.';
   $('#cKm').value = cr.km; $('#cKmOut').textContent = fmtKm(cr.km);
   const v = cr.current, box = $('#createResult');
@@ -1810,7 +1842,7 @@ $('#createBtn').onclick = createLoop;
 $('#pickBtn').onclick = () => { setView('map'); toast('Tap the map where the walk should start'); };
 map.on('click', e => {
   if (lastContent !== 'create' || cr.mode !== 'point') return;
-  cr.point = {lat:e.latlng.lat, lon:e.latlng.lng}; cr.current = null; cr.options = [];
+  cr.point = {lat:e.latlng.lat, lon:e.latlng.lng}; cr.pointName = null; cr.current = null; cr.options = [];
   renderCreate(); renderMap();
   if (view === 'map') { setView('create'); toast('Start point set'); }
 });
