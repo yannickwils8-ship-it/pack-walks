@@ -209,6 +209,23 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
 .data-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .fine{font-size:12px;color:var(--muted)}
 
+/* ---------- create a walk ---------- */
+.tabs2{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--surface-2);padding:4px;border-radius:12px}
+.tabs2 button{padding:9px;border:0;border-radius:9px;background:none;font-weight:700;color:var(--muted);cursor:pointer}
+.tabs2 button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.range{display:flex;flex-direction:column;gap:6px}
+.range-head{display:flex;justify-content:space-between;align-items:baseline}
+.range-head b{font:700 24px var(--display);font-variant-numeric:tabular-nums}
+.range input{width:100%;accent-color:var(--accent);height:30px;margin:0}
+.range-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.pick-hint{padding:12px;border:1px dashed var(--line);border-radius:12px;font-size:14px;color:var(--muted)}
+.pick-hint b{color:var(--ink)}
+.inline{display:flex;gap:8px}
+.inline input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.inline .btn{flex:none}
+.add-box{background:var(--surface-2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.mapwrap.picking #map{cursor:crosshair}
+
 /* ---------- map ---------- */
 .legend{position:absolute;left:12px;bottom:24px;z-index:500;display:flex;gap:12px;flex-wrap:wrap;background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
 .legend span{display:flex;align-items:center;gap:6px}
@@ -265,6 +282,7 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
     <div class="brand"><svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><ellipse cx="16" cy="21" rx="7" ry="6"/><circle cx="7.5" cy="13.5" r="3"/><circle cx="12.5" cy="8" r="3"/><circle cx="19.5" cy="8" r="3"/><circle cx="24.5" cy="13.5" r="3"/></svg>Pack Walks</div>
     <nav class="nav" aria-label="Main">
       <button data-view="walks" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Walks</button>
+      <button data-view="create"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></svg>Create</button>
       <button data-view="map" class="map-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg>Map</button>
       <button data-view="group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.3.2 4 1.8 4.5 4.5"/></svg>Group</button>
       <button data-view="me"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5"/></svg>Me</button>
@@ -286,6 +304,32 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
       </div>
       <div class="progress" id="progress" hidden><div class="bar"><i id="progBar"></i></div><p id="progText"></p></div>
       <div id="walksBody" class="view"></div>
+    </section>
+
+    <section class="view" id="view-create" hidden>
+      <div class="view-head"><div><h1>Create a walk</h1><p class="sub">A loop in a nature area, or from any point you choose on the map.</p></div></div>
+      <div class="card form">
+        <div class="tabs2" role="tablist" aria-label="Where to start">
+          <button data-cmode="area" class="on" role="tab">Nature area</button>
+          <button data-cmode="point" role="tab">Point on map</button>
+        </div>
+        <div id="cmArea" class="form">
+          <div class="field"><label for="cArea">Nature area</label><select id="cArea"></select></div>
+          <div class="field"><label for="cSearch">Or type another nature area</label><input id="cSearch" placeholder="e.g. Kesselse Heide" autocomplete="off"></div>
+        </div>
+        <div id="cmPoint" class="form" hidden>
+          <div class="pick-hint" id="pickHint"></div>
+          <button class="btn" id="pickBtn" type="button">Choose on map</button>
+        </div>
+        <div class="range">
+          <div class="range-head"><label for="cKm" class="flabel">Distance</label><b id="cKmOut">6 km</b></div>
+          <input type="range" id="cKm" min="3" max="15" step="0.5" value="6">
+          <div class="range-scale"><span>3 km</span><span>15 km</span></div>
+        </div>
+        <button class="btn primary block" id="createBtn" type="button">Create loop</button>
+        <p class="muted" id="createStatus" style="margin:0;font-size:13.5px" hidden></p>
+      </div>
+      <div id="createResult"></div>
     </section>
 
     <section class="view" id="view-group" hidden>
@@ -355,7 +399,7 @@ const ROUTE = '#d9480f';
 const LS = 'pack-walks-local.v2';
 function defaults(){
   return {me:null, members:[], walks:[], rsvp:{},
-    settings:{gustCaution:45, gustCancel:60, startDate:'', count:6, time:'10:00'}};
+    settings:{gustCaution:45, gustCancel:60, startDate:'', count:6, time:'10:00', createKm:6}};
 }
 function load(){
   try {
@@ -422,15 +466,19 @@ async function geocode(q){
   if (!j.length) throw new Error('Could not find "'+q+'" in Belgium. Try postcode and town, e.g. 3070 Kampenhout.');
   return {lat:+j[0].lat, lon:+j[0].lon};
 }
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-async function overpass(q){
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+// Tries each public server in turn, giving each at most `ms` milliseconds
+async function overpass(q, ms = 90000){
   let err;
   for (const u of OVERPASS) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
     try {
-      const r = await fetch(u, {method:'POST', body:'data='+encodeURIComponent(q), headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+      const r = await fetch(u, {method:'POST', body:'data='+encodeURIComponent(q), headers:{'Content-Type':'application/x-www-form-urlencoded'}, signal:ctl.signal});
       if (r.ok) return await r.json();
       err = new Error('The map data server is busy ('+r.status+'). Try again in a minute.');
-    } catch(e) { err = e; }
+    } catch(e) {
+      err = e.name === 'AbortError' ? new Error('The map data servers are too slow right now. Try again in a minute.') : e;
+    } finally { clearTimeout(timer); }
   }
   throw err;
 }
@@ -707,7 +755,7 @@ async function buildCalendar(){
       return;
     }
     const first = state.settings.startDate || nextSunday();
-    const kept = state.walks.filter(w => w.date < first);
+    const kept = state.walks.filter(w => w.date < first || w.custom);   // walks created by hand stay
     const fresh = [];
     // Lengths vary from walk to walk across the comfortable range, in random order
     const fracs = shuffle([0, 0.25, 0.5, 0.75, 1]);
@@ -715,6 +763,7 @@ async function buildCalendar(){
       recent: recentWalks(first).map(w => ({cells:cellsOf(w.pts), start:w.start}))};
     for (let i = 0; i < state.settings.count; i++) {
       const date = addDays(first, 14 * i), target = lo + (cap - lo) * fracs[i % fracs.length];
+      if (kept.some(k => k.date === date)) continue;   // a hand-made walk already fills this date
       setProgress(`Checking weather and distances for ${prettyDate(date)} (${i+1} of ${state.settings.count})…`, 0.2 + 0.8 * i / state.settings.count);
       fresh.push(await planWalk(date, cands, target, cap, ctx));
     }
@@ -751,7 +800,8 @@ const sizeName = s => ({S:'small', M:'medium', L:'large'})[s] || 'medium';
 const upcoming = () => state.walks.filter(w => w.date >= today()).sort(byDate);
 const past = () => state.walks.filter(w => w.date < today()).sort(byDate).reverse();
 const junctions = w => w.kind === 'loop' ? w.name.replace('Knooppunten ', '').split(' → ') : null;
-const walkTitle = w => w.status !== 'proposed' ? 'Cancelled' : w.kind === 'loop' ? 'Knooppunten loop' : w.name;
+const walkTitle = w => w.status !== 'proposed' ? 'Cancelled'
+  : (w.kind === 'loop' ? 'Knooppunten loop' : w.kind === 'trail' ? 'Trail loop' : w.name) + (w.place ? ' · ' + w.place : '');
 function answers(w){
   const a = state.rsvp[w.id] || {}, g = {yes:[], maybe:[], no:[], none:[]};
   state.members.forEach(m => g[a[m.id] || 'none'].push(m));
@@ -795,9 +845,13 @@ function shareText(w){
 // ---------- navigation ----------
 let view = 'walks', selectedId = null, addOpen = false;
 const isPhone = () => matchMedia('(max-width: 900px)').matches;
+let lastContent = 'walks';   // the page behind the map tab on phones
 function setView(v){
-  if (v === 'map' && !isPhone()) v = 'walks';
+  if (v === 'map' && !isPhone()) v = lastContent;
   view = v;
+  if (v !== 'map') lastContent = v;
+  document.querySelector('.mapwrap').classList.toggle('picking', lastContent === 'create' && cr.mode === 'point');
+  renderMap();
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
   document.querySelectorAll('.content > .view').forEach(s => s.hidden = s.id !== 'view-' + v);
   document.body.classList.toggle('show-map', v === 'map');
@@ -825,6 +879,7 @@ function renderMap(){
     L.marker([m.lat, m.lon], {icon, zIndexOffset: m.id === state.me ? 500 : 0})
       .bindTooltip(`${esc(m.name)} · ${esc(m.town)}`).addTo(homeLayer);
   });
+  if (lastContent === 'create') return drawCreate();
   const w = selectedWalk();
   if (w && w.status === 'proposed' && w.pts?.length) {
     state.members.forEach(m => L.polyline([[m.lat, m.lon], [w.start.lat, w.start.lon]],
@@ -888,7 +943,7 @@ function heroHTML(w){
   const mine = me(), myD = mine ? w.dists?.[mine.id] : null;
   const j = junctions(w), g = answers(w);
   const stats = [
-    ['Length', `${w.len} km`, w.kind === 'loop' ? 'Loop' : 'Marked route'],
+    ['Length', `${w.len} km`, w.kind === 'route' ? 'Marked route' : 'Loop'],
     ['Nature', w.natureShare != null ? `${Math.round(w.natureShare * 100)}%` : 'Green', w.forestShare > 0.3 ? 'Through woods' : 'Fields and woods'],
     w.wx ? ['Weather', `${wxIcon(w.wx.code)} ${w.wx.tmax}°C`, `Gusts ${w.wx.gust} km/h`] : ['Weather', '—', 'About 16 days before'],
     ...(mine ? [['Your drive', myD != null ? `${Math.round(myD)} km` : '—', myD != null && myD > mine.maxDrive ? 'Over your maximum' : `Max ${mine.maxDrive} km`]] : []),
@@ -1155,8 +1210,319 @@ $('#resetBtn').onclick = () => {
   renderAll(); setView('walks'); toast('All data cleared');
 };
 
+// ---------- create a walk: a loop in a nature area or from a point on the map ----------
+// Names only: each place is looked up when chosen, so positions always come from the map data
+const DOMAINS = [
+  ['Near Brussels', ['Zoniënwoud', 'Hallerbos', 'Meerdaalwoud', 'Heverleebos', 'Park van Tervuren', 'Ter Kamerenbos', 'Laarbeekbos', 'Torfbroek', 'Lembeekse bossen', 'Bertembos']],
+  ['Flanders', ['Kalmthoutse Heide', 'Zoerselbos', 'Nationaal Park Hoge Kempen', 'Bokrijk', 'Wijnendalebos', 'Vloethemveld', 'Kluisbos', "Bos t'Ename"]],
+  ['Wallonia', ['Hautes Fagnes', "Forêt d'Anlier", 'Hertogenwald', 'Bois de la Houssière']],
+];
+const cr = {mode:'area', point:null, km:state.settings.createKm || 6, ctx:null, variants:[], idx:0, current:null, busy:false};
+// Cost per km by path type: trails and forest tracks are cheapest, quiet roads only to connect them
+const PATH_WEIGHT = {path:1, footway:1, track:1, bridleway:1, steps:1.5, cycleway:1.3, pedestrian:1.6, living_street:1.8, service:2.5, unclassified:2.5, residential:2.5};
+
+class MinHeap {
+  constructor(){ this.k = []; this.v = []; }
+  get size(){ return this.k.length; }
+  push(k, v){
+    const K = this.k, V = this.v; let i = K.length; K.push(k); V.push(v);
+    while (i > 0) { const p = (i - 1) >> 1; if (K[p] <= k) break; K[i] = K[p]; V[i] = V[p]; i = p; }
+    K[i] = k; V[i] = v;
+  }
+  pop(){
+    const K = this.k, V = this.v, tk = K[0], tv = V[0], lk = K.pop(), lv = V.pop();
+    if (K.length) {
+      let i = 0; const n = K.length;
+      for (;;) { const l = 2 * i + 1; if (l >= n) break; const r = l + 1, c = r < n && K[r] < K[l] ? r : l; if (K[c] >= lk) break; K[i] = K[c]; V[i] = V[c]; i = c; }
+      K[i] = lk; V[i] = lv;
+    }
+    return [tk, tv];
+  }
+}
+function offset(p, d, deg){
+  const t = deg * Math.PI / 180;
+  return {lat: p.lat + d / 111.32 * Math.cos(t), lon: p.lon + d / (111.32 * Math.cos(p.lat * Math.PI / 180)) * Math.sin(t)};
+}
+const bearingTo = (a, b) => Math.atan2((b.lon - a.lon) * Math.cos(a.lat * Math.PI / 180), b.lat - a.lat) * 180 / Math.PI;
+const fmtKm = k => `${+k.toFixed(1)} km`;
+function fmtDuration(mins){
+  let h = Math.floor(mins / 60), m = Math.round((mins % 60) / 5) * 5;
+  if (m === 60) { h++; m = 0; }
+  return h ? `${h} h${m ? ' ' + String(m).padStart(2, '0') : ''}` : `${m} min`;
+}
+// Prefer real nature areas (forest, reserve, park, heath) over things that merely share the name,
+// such as "Ecoduct Hallerbos"; among those, take the largest
+const NATURE_TYPES = /^(forest|wood|nature_reserve|park|protected_area|national_park|heath|grassland|wetland|scrub)$/;
+async function findPlace(q){
+  const j = await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=10&countrycodes=be&q=' + encodeURIComponent(q))).json();
+  if (!j.length) throw new Error(`Could not find "${q}" in Belgium. Check the spelling or try another name.`);
+  const size = r => { const b = r.boundingbox.map(Number); return (b[1] - b[0]) * (b[3] - b[2]); };
+  const nature = j.filter(r => NATURE_TYPES.test(r.type));
+  const r = (nature.length ? nature : j).sort((a, b) => size(b) - size(a))[0];
+  return {lat:+r.lat, lon:+r.lon, name:r.name || r.display_name.split(',')[0]};
+}
+async function nearestParking(p){
+  const d = await overpass(`[out:json][timeout:30];nwr["amenity"="parking"]["access"!~"^(private|no|customers)$"](around:2500,${p.lat.toFixed(5)},${p.lon.toFixed(5)});out center qt;`, 10000);
+  const list = d.elements.map(e => ({lat:e.lat ?? e.center?.lat, lon:e.lon ?? e.center?.lon})).filter(x => x.lat);
+  return list.sort((a, b) => km(a, p) - km(b, p))[0] || null;
+}
+// Walkable ways, knooppunten and the links between them, around a start point (radius R in km)
+async function loadArea(S, R){
+  const a = `(around:${Math.round(R * 1000)},${S.lat.toFixed(5)},${S.lon.toFixed(5)})`;
+  const data = await overpass(`[out:json][timeout:120];
+    way["highway"~"^(path|footway|track|bridleway|steps|cycleway|pedestrian|living_street|service|unclassified|residential)$"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["area"!="yes"]${a}->.w;
+    .w out body qt;
+    node(w.w);
+    out skel qt;
+    node["rwn_ref"]${a};
+    out qt;
+    relation["network:type"="node_network"]${a};
+    out geom qt;`, 60000);
+  const coords = new Map(), G = new Map(), trail = new Set(), kps = [], segs = [], ways = [];
+  for (const e of data.elements) {
+    if (e.type === 'node') { coords.set(e.id, [e.lat, e.lon]); if (e.tags?.rwn_ref) kps.push({id:e.id, ref:e.tags.rwn_ref, lat:e.lat, lon:e.lon}); }
+    else if (e.type === 'way' && e.nodes) ways.push(e);
+    else if (e.type === 'relation') {
+      const ws = (e.members || []).filter(m => m.type === 'way' && m.geometry?.length > 1).map(m => m.geometry.map(p => [p.lat, p.lon]));
+      if (ws.length) segs.push({id:e.id, ways:ws, len:ws.reduce((x, w) => x + lineKm(w), 0)});
+    }
+  }
+  const link = (a, b, len, cost, eid) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid}); };
+  for (const w of ways) {
+    const wt = PATH_WEIGHT[w.tags?.highway] || 2.5;
+    for (let i = 1; i < w.nodes.length; i++) {
+      const a = w.nodes[i - 1], b = w.nodes[i], pa = coords.get(a), pb = coords.get(b);
+      if (!pa || !pb) continue;
+      const len = km(P(pa), P(pb)), eid = a < b ? a + '-' + b : b + '-' + a;
+      link(a, b, len, len * wt, eid); link(b, a, len, len * wt, eid);
+      if (wt <= 1.3) { trail.add(a); trail.add(b); }
+    }
+  }
+  return {coords, G, trail, kps, segs};
+}
+function nearestNode(area, p, trailOnly){
+  const pool = trailOnly && area.trail.size ? area.trail : area.G.keys(), q = [p.lat, p.lon];
+  let best = null, bd = Infinity;
+  for (const id of pool) { const c = area.coords.get(id); if (!c) continue; const d = d2(c, q); if (d < bd) { bd = d; best = id; } }
+  return best;
+}
+// Cheapest path; edges already used earlier in the loop cost six times more, to avoid walking back the same way
+function dijkstra(G, src, dst, used){
+  if (src === dst) return {nodes:[src], edges:[]};
+  const dist = new Map([[src, 0]]), prev = new Map(), heap = new MinHeap();
+  heap.push(0, src);
+  while (heap.size) {
+    const [d, u] = heap.pop();
+    if (u === dst) break;
+    if (d > dist.get(u)) continue;
+    for (const e of G.get(u) || []) {
+      const c = d + e.cost * (used.has(e.eid) ? 6 : 1);
+      if (c < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, c); prev.set(e.to, {from:u, e}); heap.push(c, e.to); }
+    }
+  }
+  if (!prev.has(dst)) return null;
+  const nodes = [dst], edges = [];
+  for (let cur = dst; cur !== src; ) { const p = prev.get(cur); edges.push(p.e); cur = p.from; nodes.push(cur); }
+  return {nodes:nodes.reverse(), edges:edges.reverse()};
+}
+// A loop along paths: three waypoints on a circle that passes through the start, sized to the distance
+function buildTrailLoop(area, S, L, bearing){
+  const startId = nearestNode(area, S, false);
+  if (startId == null) return null;
+  const sc = area.coords.get(startId), s = {lat:sc[0], lon:sc[1]};
+  let r = L / (2 * Math.PI * 1.25), best = null;
+  for (let it = 0; it < 6; it++) {
+    const C = offset(s, r, bearing);
+    const seq = [startId, ...[1, 2, 3].map(k => nearestNode(area, offset(C, r, bearing + 180 + k * 90), true)), startId];
+    const used = new Set(), nodes = [startId];
+    let len = 0, reused = 0, ok = true;
+    for (let i = 1; i < seq.length; i++) {
+      const res = dijkstra(area.G, seq[i - 1], seq[i], used);
+      if (!res) { ok = false; break; }
+      res.edges.forEach(e => { if (used.has(e.eid)) reused += e.len; used.add(e.eid); len += e.len; });
+      nodes.push(...res.nodes.slice(1));
+    }
+    if (!ok || len < 0.5) break;
+    const cand = {start:s, len, pts:nodes.map(id => area.coords.get(id)), score:Math.abs(len - L) / L + reused / len};
+    if (!best || cand.score < best.score) best = cand;
+    if (Math.abs(len - L) / L < 0.05) break;
+    r *= Math.max(0.5, Math.min(1.8, L / len));
+  }
+  return best;
+}
+// Signposted loops on the knooppunten network, starting from junctions near the start point
+function knooppuntenVariants(area, S, L){
+  if (!area.kps.length || !area.segs.length) return [];
+  const g = buildGraph(area.kps, area.segs), out = [], taken = [];
+  const starts = area.kps.filter(n => g.adj.get(n.id)?.length && km(n, S) < 2).sort((a, b) => km(a, S) - km(b, S)).slice(0, 5);
+  for (const n of starts) for (const l of findLoops(g, n.id, L * 0.88, L * 1.12).slice(0, 10)) {
+    const pts = loopPointsG(g, l), cells = cellsOf(pts);
+    if (taken.some(t => overlap(t, cells) > 0.6)) continue;
+    taken.push(cells);
+    out.push({kind:'loop', name:'Knooppunten ' + loopRefsG(g, l, n.id), start:{lat:n.lat, lon:n.lon}, len:l.len, pts});
+    if (out.length >= 4) return out;
+  }
+  return out;
+}
+function trailVariant(){
+  const c = cr.ctx;
+  for (let tries = 0; tries < 3; tries++) {
+    const t = buildTrailLoop(c.area, c.origin, c.L, c.bearing + (Math.random() * 2 - 1) * c.spread);
+    if (t) return {kind:'trail', name:'Trail loop', place:c.place, start:t.start, len:t.len, pts:t.pts};
+  }
+  return null;
+}
+const cStatus = t => { const el = $('#createStatus'); el.hidden = !t; el.textContent = t || ''; };
+async function createLoop(){
+  if (cr.busy) return;
+  const L = cr.km;
+  const q = $('#cSearch').value.trim() || $('#cArea').value;
+  if (cr.mode === 'area' && !q) return toast('Choose a nature area first.', true);
+  if (cr.mode === 'point' && !cr.point) return toast('Choose a start point on the map first.', true);
+  cr.busy = true; $('#createBtn').disabled = true;
+  try {
+    let origin, place = null, bearing = Math.random() * 360, spread = 180;
+    if (cr.mode === 'area') {
+      cStatus(`Finding ${q}…`);
+      const pl = await findPlace(q);
+      place = pl.name;
+      cStatus('Looking for a parking to start from…');
+      const park = await nearestParking(pl).catch(() => null);
+      origin = park || pl;
+      // From a parking at the edge, head into the area
+      if (park && km(park, pl) > 0.3) { bearing = bearingTo(park, pl); spread = 60; }
+    } else origin = cr.point;
+    const r0 = L / (2 * Math.PI * 1.25);
+    cStatus('Loading paths, tracks and knooppunten around the start…');
+    const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
+    cStatus(`Building loops of about ${fmtKm(L)}…`);
+    await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
+    cr.ctx = {area, origin, place, bearing, spread, L};
+    cr.variants = knooppuntenVariants(area, origin, L).map(v => ({...v, place}));
+    if (!cr.variants.length) { const t = trailVariant(); if (t) cr.variants.push(t); }
+    if (!cr.variants.length) throw new Error(`No loop of about ${fmtKm(L)} found here. Try another distance or start point.`);
+    cr.idx = 0; cr.current = cr.variants[0];
+    renderCreate(); renderMap(); fitCreate();
+    $('#createResult').scrollIntoView({behavior:'smooth', block:'start'});
+  } catch(err) {
+    toast(err.message || 'Something went wrong. Try again in a minute.', true);
+  } finally {
+    cr.busy = false; $('#createBtn').disabled = false; cStatus('');
+  }
+}
+function anotherRoute(){
+  const btn = $('#cAnother'); btn.disabled = true; btn.textContent = 'Finding…';
+  setTimeout(() => {
+    cr.idx++;
+    if (cr.idx >= cr.variants.length) { const t = trailVariant(); if (t) cr.variants.push(t); }
+    if (cr.idx >= cr.variants.length) { cr.idx = 0; toast('No other loop found here; showing the first one again.'); }
+    cr.current = cr.variants[cr.idx];
+    renderCreate(); renderMap(); fitCreate();
+  }, 30);
+}
+function fitCreate(){
+  if (cr.current) map.fitBounds(L.latLngBounds(cr.current.pts).pad(0.25));
+  else if (cr.point) map.setView([cr.point.lat, cr.point.lon], 14);
+}
+function drawCreate(){
+  if (cr.mode === 'point' && cr.point && !cr.current)
+    L.marker([cr.point.lat, cr.point.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start here</span>', iconSize:[80,24], iconAnchor:[40,30]})}).addTo(walkLayer);
+  const v = cr.current;
+  if (!v) return;
+  L.polyline(v.pts, {color:'#ffffff', weight:9, opacity:.85, interactive:false}).addTo(walkLayer);
+  L.polyline(v.pts, {color:ROUTE, weight:5}).bindTooltip(`${fmtKm(v.len)} loop`).addTo(walkLayer);
+  L.marker([v.start.lat, v.start.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start</span>', iconSize:[50,24], iconAnchor:[25,30]}), zIndexOffset:1000}).addTo(walkLayer);
+}
+const createdTitle = v => (v.kind === 'loop' ? 'Knooppunten loop' : 'Trail loop') + (v.place ? ' · ' + v.place : '');
+function createdShare(v){
+  const j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
+  return [`🐕 Dog walk: ${createdTitle(v)}`, `🥾 Loop of ${fmtKm(v.len)} (about ${fmtDuration(v.len / 4 * 60)})`,
+    ...(j ? [`🔢 Follow junctions: ${j.join(' → ')}`] : []),
+    `📍 Start: https://www.google.com/maps/search/?api=1&query=${v.start.lat.toFixed(5)},${v.start.lon.toFixed(5)}`].join('\n');
+}
+function renderCreate(){
+  document.querySelectorAll('[data-cmode]').forEach(b => { b.classList.toggle('on', b.dataset.cmode === cr.mode); b.setAttribute('aria-selected', b.dataset.cmode === cr.mode); });
+  $('#cmArea').hidden = cr.mode !== 'area';
+  $('#cmPoint').hidden = cr.mode !== 'point';
+  $('#pickBtn').hidden = !isPhone();
+  $('#pickHint').innerHTML = cr.point
+    ? `Start: <b>${cr.point.lat.toFixed(4)}, ${cr.point.lon.toFixed(4)}</b>. ${isPhone() ? 'Tap “Choose on map”' : 'Click the map'} to move it.`
+    : isPhone() ? 'Tap “Choose on map”, then tap where the walk should start.' : 'Click the map where the walk should start.';
+  $('#cKm').value = cr.km; $('#cKmOut').textContent = fmtKm(cr.km);
+  const v = cr.current, box = $('#createResult');
+  if (!v) { box.innerHTML = ''; return; }
+  const j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
+  const next = upcoming()[0]?.date || state.settings.startDate || nextSunday();
+  box.innerHTML = `<article class="hero"><div class="hero-body">
+    <div><span class="eyebrow">${v.kind === 'loop' ? 'Signposted knooppunten' : 'Along paths and forest tracks'}</span>
+      <div class="walk-title" style="margin-top:4px">${esc(createdTitle(v))}</div>
+      ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
+    </div>
+    <div class="stats">
+      <div class="stat"><small>Length</small><b>${fmtKm(v.len)}</b><span>You asked ${fmtKm(cr.ctx.L)}</span></div>
+      <div class="stat"><small>Walking time</small><b>${fmtDuration(v.len / 4 * 60)}</b><span>At about 4 km/h</span></div>
+      <div class="stat"><small>Shape</small><b>Loop</b><span>Ends at the start</span></div>
+    </div>
+    ${v.kind === 'trail' ? '<p class="note" style="margin:0">Not signposted. Follow it on your phone, or download the GPX for a walking app.</p>' : ''}
+    <div class="actions">
+      <button class="btn" id="cAnother">Another route</button>
+      <button class="btn" id="cShow">Show on map</button>
+      <a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${v.start.lat},${v.start.lon}" target="_blank" rel="noopener">Directions to start</a>
+      <button class="btn" id="cGpx">Download GPX</button>
+    </div>
+    <a class="btn block" href="https://wa.me/?text=${encodeURIComponent(createdShare(v))}" target="_blank" rel="noopener">Share on WhatsApp</a>
+    <div class="add-box">
+      <div class="section-label" style="margin:0">Add to the group calendar</div>
+      <div class="inline"><input type="date" id="cDate" value="${next}" aria-label="Walk date"><button class="btn primary" id="cAdd">Add walk</button></div>
+      <small class="muted">Replaces any walk already planned on that date.</small>
+    </div>
+  </div></article>`;
+  $('#cAnother').onclick = anotherRoute;
+  $('#cShow').onclick = () => { if (isPhone()) setView('map'); fitCreate(); };
+  $('#cGpx').onclick = () => download(`pack-walk-${+v.len.toFixed(1)}km.gpx`, gpx(createdTitle(v), v.pts), 'application/gpx+xml');
+  $('#cAdd').onclick = () => addCreatedToCalendar($('#cDate').value);
+}
+async function addCreatedToCalendar(date){
+  const v = cr.current;
+  if (!v || !date) return toast('Pick a date first.', true);
+  const btn = $('#cAdd'); btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    const ms = state.members, time = state.settings.time;
+    const [rows, wx] = await Promise.all([drivingKm(ms, [v.start]), fetchWeather(v.start.lat, v.start.lon, date, time)]);
+    if (wx && wx.gust >= state.settings.gustCancel) {
+      toast(`Gusts up to ${wx.gust} km/h are forecast on that day, over your ${state.settings.gustCancel} km/h limit. Pick another day.`, true);
+      return;
+    }
+    const dists = {};
+    ms.forEach((m, i) => dists[m.id] = rows && rows[i][0] != null ? rows[i][0] : km(m, v.start) * ROAD);
+    const w = {id:uid(), date, time, status:'proposed', reason:'', name:v.name, kind:v.kind, place:v.place, key:'custom:' + uid(), custom:true,
+      start:v.start, len:+v.len.toFixed(1), pts:v.pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]),
+      natureShare:null, forestShare:0, wx, dists, members:ms.map(m => m.id)};
+    const old = state.walks.find(x => x.date === date);
+    if (old) { delete state.rsvp[old.id]; state.walks = state.walks.filter(x => x !== old); }
+    state.walks.push(w); selectedId = w.id; save();
+    renderAll(); setView('walks'); fitMap('walk');
+    toast(`Added for ${prettyDate(date)}${old ? ', replacing the walk planned then' : ''}`);
+  } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Add walk'; } }
+}
+$('#cArea').innerHTML = '<option value="">Choose a nature area…</option>' + DOMAINS.map(([g, list]) =>
+  `<optgroup label="${esc(g)}">${list.map(n => `<option>${esc(n)}</option>`).join('')}</optgroup>`).join('');
+$('#cArea').onchange = () => { $('#cSearch').value = ''; };
+$('#cSearch').onkeydown = e => { if (e.key === 'Enter') createLoop(); };
+document.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => { cr.mode = b.dataset.cmode; cr.current = null; renderCreate(); setView('create'); });
+$('#cKm').oninput = e => { cr.km = +e.target.value; $('#cKmOut').textContent = fmtKm(cr.km); };
+$('#cKm').onchange = () => { state.settings.createKm = cr.km; save(); };
+$('#createBtn').onclick = createLoop;
+$('#pickBtn').onclick = () => { setView('map'); toast('Tap the map where the walk should start'); };
+map.on('click', e => {
+  if (lastContent !== 'create' || cr.mode !== 'point') return;
+  cr.point = {lat:e.latlng.lat, lon:e.latlng.lng}; cr.current = null;
+  renderCreate(); renderMap();
+  if (view === 'map') { setView('create'); toast('Start point set'); }
+});
+
 // ---------- init ----------
-function renderAll(){ renderChip(); renderWalks(); renderGroup(); renderMe(); renderSettings(); renderMap(); }
+function renderAll(){ renderChip(); renderWalks(); renderGroup(); renderMe(); renderSettings(); renderCreate(); renderMap(); }
 matchMedia('(max-width: 900px)').addEventListener('change', () => { if (view === 'map' && !isPhone()) setView('walks'); map.invalidateSize(); });
 renderAll();
 setView(state.members.length && !me() ? 'me' : 'walks');

@@ -87,6 +87,26 @@ On a phone the navigation sits at the bottom, and the map has its own **Map** ta
   - gusts of **45 km/h or more** steer walks away from woods,
   - forecasts reach 16 days ahead, so later walks say "Forecast not out yet".
 
+## Create a walk
+
+Make a loop yourself, for any day.
+
+1. Open **Create**.
+2. Choose where:
+   - **Nature area:** pick a domain from the list (for example Zoniënwoud, Hallerbos, Meerdaalwoud, Kalmthoutse Heide), or type the name of another one.
+   - **Point on map:** click the map where the walk should start. On a phone, tap **Choose on map** and then tap the map.
+3. Set the **distance** with the slider (3–15 km).
+4. Press **Create loop**. This takes from a few seconds to about a minute, depending on how busy the public map servers are.
+
+How the loop is made:
+
+- For a nature area, the walk starts at the nearest parking and heads into the area.
+- The app first looks for a **signposted knooppunten loop** of about the right length. The numbered junctions to follow are shown.
+- If there is none, it builds a **trail loop** along paths and forest tracks, using roads only to connect them. Trail loops aren't signposted, so follow them on your phone or download the GPX.
+- Every route is a loop that ends where it starts. The length is usually within about 10% of what you asked.
+
+On the result you can choose **Another route**, see it on the map, get directions, download the GPX, share it on WhatsApp, or **Add walk** to the group calendar on a date. A walk added by hand replaces any walk already planned that day, and **Plan walks** leaves it in place. If the forecast for that day shows gusts above the cancel limit, the app won't add it.
+
 ## Group
 
 - **Add member** opens a form: name, town, dog's name, size, lead, notes, longest drive (15/20/25 km) and longest walk (5–8 km).
