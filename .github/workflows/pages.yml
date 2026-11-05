@@ -1,0 +1,71 @@
+# Publishes the app on GitHub Pages together with pre-built walk data.
+# The data is rebuilt every Monday from a fresh OpenStreetMap extract of Belgium; other runs
+# (every push) reuse that week's data from the cache, so code changes go live in about a minute.
+name: Publish site
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Week of the data
+        id: week
+        run: echo "key=walk-data-$(date -u +%G-%V)-${{ hashFiles('tools/build_data.py') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Reuse this week's walk data
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: data-build
+          key: ${{ steps.week.outputs.key }}
+
+      - uses: actions/setup-python@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Build walk data
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install 'osmium>=4,<5'
+          curl -sSfL -o belgium.osm.pbf https://download.geofabrik.de/europe/belgium-latest.osm.pbf
+          python tools/build_data.py belgium.osm.pbf data-build
+          du -sh data-build
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp index.html manifest.webmanifest icon.svg icon-192.png icon-512.png README.md *.json _site/
+          cp -r data-build _site/data
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
