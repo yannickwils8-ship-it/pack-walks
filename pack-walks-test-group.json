@@ -1,0 +1,54 @@
+{
+  "me": null,
+  "members": [
+    {
+      "id": "test-anna",
+      "name": "Test Anna",
+      "town": "9000 Gent",
+      "lat": 51.0543,
+      "lon": 3.7174,
+      "dog": {"name": "Bo", "size": "M", "lead": false, "notes": ""},
+      "maxDrive": 20,
+      "maxLen": 7
+    },
+    {
+      "id": "test-jan",
+      "name": "Test Jan",
+      "town": "3000 Leuven",
+      "lat": 50.8798,
+      "lon": 4.7005,
+      "dog": {"name": "Mimi", "size": "S", "lead": true, "notes": "scared of bikes"},
+      "maxDrive": 25,
+      "maxLen": 8
+    },
+    {
+      "id": "test-sofie",
+      "name": "Test Sofie",
+      "town": "2800 Mechelen",
+      "lat": 51.0259,
+      "lon": 4.4776,
+      "dog": {"name": "Rocky", "size": "L", "lead": false, "notes": ""},
+      "maxDrive": 15,
+      "maxLen": 6
+    },
+    {
+      "id": "test-luc",
+      "name": "Test Luc",
+      "town": "3500 Hasselt",
+      "lat": 50.9307,
+      "lon": 5.3325,
+      "dog": {"name": "Nala", "size": "M", "lead": false, "notes": "no other dogs"},
+      "maxDrive": 25,
+      "maxLen": 7
+    }
+  ],
+  "walks": [],
+  "rsvp": {},
+  "settings": {
+    "gustCaution": 45,
+    "gustCancel": 60,
+    "startDate": "",
+    "count": 6,
+    "time": "10:00"
+  }
+}

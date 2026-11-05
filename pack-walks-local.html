@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pack Walks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+/* Layout: navigation rail | one content column | full-height map. On phones: content with a bottom tab bar, map as its own tab. */
+:root{
+  --bg:#edf1ec; --surface:#ffffff; --surface-2:#f5f7f4; --ink:#17211b; --muted:#5d6b63; --line:#d9e1da;
+  --accent:#1f6b4a; --accent-ink:#ffffff; --accent-soft:#e0eee5;
+  --yes:#1d7a4c; --maybe:#a8700f; --no:#b42318; --none:#7b8780;
+  --yes-soft:#dbf0e3; --maybe-soft:#f7ebcf; --no-soft:#f8dcd8; --none-soft:#eceeec;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1411; --surface:#161e19; --surface-2:#1c2620; --ink:#e4ebe6; --muted:#98a89f; --line:#2a3630;
+    --accent:#5cc492; --accent-ink:#0b1510; --accent-soft:#1c3328;
+    --yes:#5cc492; --maybe:#e2b04a; --no:#f07a6a; --none:#8d9a93;
+    --yes-soft:#1c3328; --maybe-soft:#352b14; --no-soft:#3a1d19; --none-soft:#232c27;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+h1,h2,h3{font-family:var(--display);line-height:1.15;margin:0;text-wrap:balance}
+h1{font-size:28px;letter-spacing:-.01em}
+h2{font-size:20px}
+h3{font-size:16px}
+a{color:var(--accent)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:220px minmax(360px,500px) 1fr;height:100vh}
+.rail{display:flex;flex-direction:column;gap:20px;padding:22px 14px;background:var(--surface);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font:700 20px var(--display);padding:0 8px}
+.brand svg{width:28px;height:28px;color:var(--accent)}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav button{display:flex;align-items:center;gap:12px;padding:10px 12px;border:0;border-radius:10px;background:none;color:var(--muted);cursor:pointer;font-weight:600;text-align:left}
+.nav button svg{width:20px;height:20px;flex:none}
+.nav button:hover{background:var(--surface-2);color:var(--ink)}
+.nav button.on{background:var(--accent-soft);color:var(--accent)}
+.nav .map-only{display:none}
+.rail-foot{margin-top:auto}
+.content{overflow-y:auto;padding:28px 24px 48px;min-width:0}
+.mapwrap{position:relative;min-width:0}
+#map{position:absolute;inset:0}
+.mobile-head{display:none}
+
+/* ---------- me chip ---------- */
+.me-chip{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);cursor:pointer;text-align:left}
+.me-chip:hover{border-color:var(--accent)}
+.me-chip small{display:block;color:var(--muted);font-size:12px}
+.me-chip b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.me-chip > span:last-child{min-width:0}
+
+/* ---------- building blocks ---------- */
+.view{display:flex;flex-direction:column;gap:18px}
+.view-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.sub{color:var(--muted);margin:4px 0 0;font-size:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.card > h2{margin-bottom:12px}
+.muted{color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;font-weight:600;text-decoration:none;font-size:14px}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.block{width:100%}
+.btn.small{padding:6px 10px;font-size:13px}
+.btn.danger{color:var(--no)}
+.btn.danger.armed{background:var(--no);border-color:var(--no);color:#fff}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:12.5px;white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12.5px;font-weight:700}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.yes{background:var(--yes-soft);color:var(--yes)} .pill.maybe{background:var(--maybe-soft);color:var(--maybe)}
+.pill.no{background:var(--no-soft);color:var(--no)} .pill.none{background:var(--none-soft);color:var(--none)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.av{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:hsl(var(--h) 40% 40%);color:#fff;font:700 12px var(--body);flex:none;border:2px solid var(--surface)}
+.avs{display:flex;flex-wrap:wrap}
+.avs .av{margin-right:-6px}
+.note{margin:6px 0 0;font-size:13.5px;color:var(--muted)}
+
+/* ---------- progress ---------- */
+.progress{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.progress .bar{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.progress .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .4s ease}
+.progress p{margin:8px 0 0;font-size:13.5px;color:var(--muted)}
+.progress.error .bar i{background:var(--no)}
+.progress.error p{color:var(--no)}
+
+/* ---------- onboarding ---------- */
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px;counter-reset:step}
+.steps li{display:grid;grid-template-columns:32px 1fr;gap:4px 12px;counter-increment:step}
+.steps li::before{content:counter(step);grid-row:span 3;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font:700 14px var(--display)}
+.steps li.done::before{content:"✓";background:var(--accent);color:var(--accent-ink)}
+.steps span{color:var(--muted);font-size:14px}
+.steps .chips{margin-top:4px}
+
+/* ---------- hero walk ---------- */
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.hero-top{padding:20px 20px 16px;background:linear-gradient(160deg,var(--accent-soft),var(--surface) 70%)}
+.hero-top h2{font-size:26px;margin-top:4px}
+.hero-top .when{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;color:var(--muted)}
+.hero-body{padding:16px 20px 20px;display:flex;flex-direction:column;gap:18px}
+.walk-title{font:600 18px var(--display)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px}
+.stat{background:var(--surface-2);border-radius:12px;padding:10px 12px;min-width:0}
+.stat small{display:block;color:var(--muted);font-size:12px}
+.stat b{display:block;font:700 18px var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat span{display:block;font-size:12px;color:var(--muted)}
+.junctions{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.junctions .kp{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 6px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:700 13px var(--body);font-variant-numeric:tabular-nums}
+.junctions .arrow{color:var(--muted);font-size:13px}
+.section-label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.rsvp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rsvp-btn{padding:12px 8px;border-radius:12px;border:2px solid var(--line);background:var(--surface);cursor:pointer;font-weight:700;font-size:15px}
+.rsvp-btn.yes:hover,.rsvp-btn.yes.on{border-color:var(--yes)} .rsvp-btn.yes.on{background:var(--yes-soft);color:var(--yes)}
+.rsvp-btn.maybe:hover,.rsvp-btn.maybe.on{border-color:var(--maybe)} .rsvp-btn.maybe.on{background:var(--maybe-soft);color:var(--maybe)}
+.rsvp-btn.no:hover,.rsvp-btn.no.on{border-color:var(--no)} .rsvp-btn.no.on{background:var(--no-soft);color:var(--no)}
+.who{display:flex;flex-direction:column;gap:10px}
+.who-row{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:10px}
+.who-row > span{font-size:13px;font-weight:700}
+.who-row .yes{color:var(--yes)} .who-row .maybe{color:var(--maybe)} .who-row .no{color:var(--no)} .who-row .none{color:var(--none)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+details.drives summary{cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between}
+details.drives summary::-webkit-details-marker{display:none}
+details.drives summary::after{content:"Show";color:var(--accent);font-size:13px}
+details.drives[open] summary::after{content:"Hide"}
+.drow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.drow > span:first-child{display:flex;align-items:center;gap:8px;min-width:0}
+.drow small{color:var(--muted);margin-left:4px}
+.drow .km{font-variant-numeric:tabular-nums;white-space:nowrap}
+.drow .over{color:var(--no);font-weight:600}
+.cancel-box{padding:20px;display:flex;flex-direction:column;gap:10px}
+
+/* ---------- walk list ---------- */
+.list{display:flex;flex-direction:column;gap:8px}
+.row{display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:12px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;text-align:left}
+.row:hover{border-color:var(--accent)}
+.row.sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.row.cancelled .datebox{background:var(--no-soft);color:var(--no)}
+.datebox{display:flex;flex-direction:column;align-items:center;justify-content:center;height:52px;border-radius:10px;background:var(--accent-soft);color:var(--accent);line-height:1}
+.datebox b{font:700 20px var(--display);font-variant-numeric:tabular-nums}
+.datebox span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+.row-main{min-width:0}
+.row-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mydot{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.mydot.yes{background:var(--yes-soft);color:var(--yes)} .mydot.maybe{background:var(--maybe-soft);color:var(--maybe)}
+.mydot.no{background:var(--no-soft);color:var(--no)} .mydot.none{background:var(--none-soft);color:var(--none)}
+details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bottom:8px}
+
+/* ---------- group ---------- */
+.members{display:grid;grid-template-columns:1fr;gap:10px}
+.member{display:flex;flex-direction:column;gap:10px}
+.member-head{display:flex;align-items:center;gap:12px}
+.member-head .av{width:40px;height:40px;font-size:14px}
+.member-head small{display:block;color:var(--muted)}
+.tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-left:4px;vertical-align:middle}
+.member-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- forms ---------- */
+.form{display:flex;flex-direction:column;gap:16px}
+.form fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:12px}
+.form legend{font:600 16px var(--display);margin-bottom:10px;padding:0}
+.field{display:flex;flex-direction:column;gap:5px}
+.field > label,.flabel{font-size:13px;font-weight:600;color:var(--muted)}
+.field small{color:var(--muted);font-size:12.5px}
+.field input,.field textarea,.field select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.field input:focus,.field textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg label{flex:1;position:relative;cursor:pointer}
+.seg label + label{border-left:1px solid var(--line)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;text-align:center;padding:9px 6px;font-weight:600;font-size:14px}
+.seg input:checked + span{background:var(--accent);color:var(--accent-ink)}
+.seg input:focus-visible + span{outline:2px solid var(--accent);outline-offset:-2px}
+.switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600;font-size:14px}
+.switch input{position:absolute;opacity:0;pointer-events:none}
+.switch .track{width:42px;height:24px;border-radius:12px;background:var(--line);position:relative;flex:none;transition:background .2s}
+.switch .track::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.switch input:checked + .track{background:var(--accent)}
+.switch input:checked + .track::after{transform:translateX(18px)}
+.switch input:focus-visible + .track{outline:2px solid var(--accent);outline-offset:2px}
+.who-pick{display:flex;flex-wrap:wrap;gap:8px}
+.who-pick button{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border:1px solid var(--line);border-radius:999px;background:var(--surface);cursor:pointer;font-weight:600}
+.who-pick button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.data-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fine{font-size:12px;color:var(--muted)}
+
+/* ---------- map ---------- */
+.legend{position:absolute;left:12px;bottom:24px;z-index:500;display:flex;gap:12px;flex-wrap:wrap;background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{display:inline-block}
+.lg-home{width:12px;height:12px;border-radius:50%;background:#4f7a65;border:2px solid #fff;box-shadow:0 0 0 1px #4f7a65}
+.lg-route{width:20px;height:4px;border-radius:2px;background:#d9480f}
+.lg-drive{width:20px;border-top:2px dashed #1f6b4a}
+.map-fit{position:absolute;top:12px;right:12px;z-index:500;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.home-pin span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:hsl(var(--h) 40% 40%);color:#fff;font:700 11px var(--body);border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4)}
+.home-pin.me span{outline:3px solid #d9480f}
+.start-pin span{display:block;padding:3px 9px;border-radius:8px;background:#d9480f;color:#fff;font:700 12px var(--body);box-shadow:0 1px 5px rgba(0,0,0,.4);text-align:center}
+.leaflet-container{font-family:var(--body)}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2000;background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:10px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
+.toast.error{background:var(--no);color:#fff}
+
+/* ---------- phones ---------- */
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr;height:100%}
+  .rail{position:fixed;left:0;right:0;bottom:0;z-index:1000;flex-direction:row;padding:6px max(8px, env(safe-area-inset-left, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-right, 0px));border-right:0;border-top:1px solid var(--line);gap:0}
+  .rail .brand,.rail .rail-foot{display:none}
+  .nav{flex-direction:row;width:100%;justify-content:space-around}
+  .nav button{flex-direction:column;gap:2px;padding:6px 4px;font-size:11.5px;flex:1;text-align:center}
+  .nav .map-only{display:flex}
+  .content{padding:16px max(16px, env(safe-area-inset-right, 0px)) 96px max(16px, env(safe-area-inset-left, 0px))}
+  .mobile-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+  .mobile-head .brand{padding:0}
+  .mobile-head .me-chip{width:auto;max-width:55%}
+  .mapwrap{display:none}
+  body.show-map .content{display:none}
+  body.show-map .mapwrap{display:block;position:fixed;inset:0 0 calc(62px + env(safe-area-inset-bottom, 0px)) 0}
+  .toast{bottom:calc(76px + env(safe-area-inset-bottom, 0px))}
+  h1{font-size:24px}
+}
+@media (max-width:420px){
+  .actions,.data-actions,.grid2{grid-template-columns:1fr}
+  .who-row{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand"><svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><ellipse cx="16" cy="21" rx="7" ry="6"/><circle cx="7.5" cy="13.5" r="3"/><circle cx="12.5" cy="8" r="3"/><circle cx="19.5" cy="8" r="3"/><circle cx="24.5" cy="13.5" r="3"/></svg>Pack Walks</div>
+    <nav class="nav" aria-label="Main">
+      <button data-view="walks" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Walks</button>
+      <button data-view="map" class="map-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg>Map</button>
+      <button data-view="group"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.3.2 4 1.8 4.5 4.5"/></svg>Group</button>
+      <button data-view="me"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5"/></svg>Me</button>
+      <button data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Settings</button>
+    </nav>
+    <div class="rail-foot"><button class="me-chip" data-go="me"></button></div>
+  </aside>
+
+  <main class="content" id="content">
+    <div class="mobile-head">
+      <div class="brand"><svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><ellipse cx="16" cy="21" rx="7" ry="6"/><circle cx="7.5" cy="13.5" r="3"/><circle cx="12.5" cy="8" r="3"/><circle cx="19.5" cy="8" r="3"/><circle cx="24.5" cy="13.5" r="3"/></svg>Pack Walks</div>
+      <button class="me-chip" data-go="me"></button>
+    </div>
+
+    <section class="view" id="view-walks">
+      <div class="view-head">
+        <div><h1>Walks</h1><p class="sub" id="planInfo"></p></div>
+        <button class="btn primary" id="planBtn">Plan walks</button>
+      </div>
+      <div class="progress" id="progress" hidden><div class="bar"><i id="progBar"></i></div><p id="progText"></p></div>
+      <div id="walksBody" class="view"></div>
+    </section>
+
+    <section class="view" id="view-group" hidden>
+      <div class="view-head">
+        <div><h1>Group</h1><p class="sub" id="groupInfo"></p></div>
+        <button class="btn primary" id="addToggle">Add member</button>
+      </div>
+      <div id="addBox"></div>
+      <div class="members" id="groupList"></div>
+    </section>
+
+    <section class="view" id="view-me" hidden>
+      <div class="view-head"><div><h1>Me</h1><p class="sub">Who is using Pack Walks on this device.</p></div></div>
+      <div id="whoBox"></div>
+      <div id="profileBox"></div>
+    </section>
+
+    <section class="view" id="view-settings" hidden>
+      <div class="view-head"><div><h1>Settings</h1><p class="sub">How walks are planned, and your group's data.</p></div></div>
+      <div class="card form">
+        <h2>Planning</h2>
+        <div class="grid2">
+          <div class="field"><label for="sStart">First walk</label><input type="date" id="sStart"></div>
+          <div class="field"><label for="sTime">Start time</label><input type="time" id="sTime" step="900"></div>
+        </div>
+        <div class="field"><label for="sCount">Walks to plan</label><input type="number" id="sCount" min="1" max="12"><small>One walk every two weeks. Every walk is a green loop of 5 to 8 km.</small></div>
+      </div>
+      <div class="card form">
+        <h2>Weather</h2>
+        <div class="grid2">
+          <div class="field"><label for="sGustC">Avoid woods from (km/h)</label><input type="number" id="sGustC" min="20" max="120"></div>
+          <div class="field"><label for="sGustX">Cancel from (km/h)</label><input type="number" id="sGustX" min="30" max="150"></div>
+        </div>
+        <small class="muted">Wind gusts at the start point during the walk. Above the first value, routes through woods are avoided because of falling branches. Above the second, the walk is cancelled.</small>
+      </div>
+      <div class="card">
+        <h2>Group data</h2>
+        <p class="muted" style="margin:0 0 12px;font-size:14px">Everything is saved in this browser only. To share the group, export the file and send it; others import it on their device.</p>
+        <div class="data-actions">
+          <button class="btn" id="exportBtn">Export file</button>
+          <button class="btn" id="importBtn">Import file</button>
+          <button class="btn" id="relocBtn">Re-locate towns</button>
+          <button class="btn danger" id="resetBtn">Clear all data</button>
+        </div>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+      <p class="fine">Walks: © OpenStreetMap contributors (knooppunten, GR/PR routes, land use). Map: © Esri. Weather: Open-Meteo. Driving distances: OSRM. Town search: Nominatim.</p>
+    </section>
+  </main>
+
+  <div class="mapwrap">
+    <div id="map"></div>
+    <button class="btn small map-fit" id="fitBtn">Show whole group</button>
+    <div class="legend"><span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const ROAD = 1.3;   // straight line -> rough road distance (fallback only)
+const ROUTE = '#d9480f';
+
+// ---------- state ----------
+const LS = 'pack-walks-local.v2';
+function defaults(){
+  return {me:null, members:[], walks:[], rsvp:{},
+    settings:{gustCaution:45, gustCancel:60, startDate:'', count:6, time:'10:00'}};
+}
+function load(){
+  try {
+    const s = JSON.parse(localStorage.getItem(LS));
+    if (s) { const d = defaults(); return {...d, ...s, settings:{...d.settings, ...s.settings}}; }
+  } catch(e) {}
+  return defaults();
+}
+let state = load();
+function save(){ try { localStorage.setItem(LS, JSON.stringify(state)); } catch(e) {} }
+
+// ---------- dates ----------
+const isoDate = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const addDays = (iso, n) => { const d = new Date(iso+'T12:00'); d.setDate(d.getDate()+n); return isoDate(d); };
+const today = () => isoDate(new Date());
+function nextSunday(){
+  const d = new Date(); d.setHours(12,0,0,0);
+  do { d.setDate(d.getDate()+1); } while (d.getDay() !== 0);
+  return isoDate(d);
+}
+const prettyDate = iso => new Date(iso+'T12:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
+const shortDate = iso => new Date(iso+'T12:00').toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'});
+const daysUntil = iso => Math.round((new Date(iso+'T12:00') - new Date(today()+'T12:00')) / 86400000);
+function countdown(iso){
+  const n = daysUntil(iso);
+  return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? `In ${n} days` : n === -1 ? 'Yesterday' : `${-n} days ago`;
+}
+
+// ---------- geo helpers ----------
+function km(a, b){
+  const R = 6371, t = Math.PI/180, dLat = (b.lat-a.lat)*t, dLon = (b.lon-a.lon)*t;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const P = p => ({lat:p[0], lon:p[1]});
+const lineKm = pts => pts.reduce((s, p, i) => i ? s + km(P(pts[i-1]), P(p)) : 0, 0);
+const d2 = (a, b) => (a[0]-b[0])**2 + ((a[1]-b[1])*0.64)**2;
+function fairCenter(){
+  const ms = state.members; if (!ms.length) return null;
+  let p = {lat: ms.reduce((s,m)=>s+m.lat,0)/ms.length, lon: ms.reduce((s,m)=>s+m.lon,0)/ms.length};
+  for (let i = 1; i <= 400; i++) {
+    let far = ms[0], fd = -1;
+    for (const m of ms) { const d = km(p, m); if (d > fd) { fd = d; far = m; } }
+    p = {lat: p.lat + (far.lat-p.lat)/(i+1), lon: p.lon + (far.lon-p.lon)/(i+1)};
+  }
+  return p;
+}
+
+// ---------- external services ----------
+async function geocode(q){
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=be&q='+encodeURIComponent(q));
+  const j = await r.json();
+  if (!j.length) throw new Error('Could not find "'+q+'" in Belgium. Try postcode and town, e.g. 3070 Kampenhout.');
+  return {lat:+j[0].lat, lon:+j[0].lon};
+}
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+async function overpass(q){
+  let err;
+  for (const u of OVERPASS) {
+    try {
+      const r = await fetch(u, {method:'POST', body:'data='+encodeURIComponent(q), headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+      if (r.ok) return await r.json();
+      err = new Error('The map data server is busy ('+r.status+'). Try again in a minute.');
+    } catch(e) { err = e; }
+  }
+  throw err;
+}
+// Driving distance (km) from each member to each start point, via OSRM. Null if unavailable.
+async function drivingKm(members, starts){
+  if (!members.length || !starts.length) return null;
+  const pts = [...members, ...starts].map(p => `${p.lon},${p.lat}`).join(';');
+  const src = members.map((_, i) => i).join(';'), dst = starts.map((_, j) => members.length + j).join(';');
+  try {
+    const j = await (await fetch(`https://router.project-osrm.org/table/v1/driving/${pts}?sources=${src}&destinations=${dst}&annotations=distance`)).json();
+    if (j.code !== 'Ok') return null;
+    return j.distances.map(row => row.map(m => m == null ? null : m/1000));
+  } catch(e) { return null; }
+}
+// One 16-day forecast per location covers every date, so each location is fetched once and reused
+const wxCache = new Map();
+function forecastFor(lat, lon){
+  const key = lat.toFixed(2) + ',' + lon.toFixed(2);
+  if (!wxCache.has(key)) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}`+
+      `&hourly=temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,weather_code&timezone=Europe%2FBrussels&forecast_days=16`;
+    wxCache.set(key, fetch(url).then(r => r.json()));
+  }
+  return wxCache.get(key);
+}
+async function fetchWeather(lat, lon, date, time){
+  try {
+    const j = await forecastFor(lat, lon);
+    const h = j.hourly, i = h.time.indexOf(`${date}T${time.slice(0,2)}:00`);
+    if (i < 0) return null;
+    const idx = [i, i+1, i+2].filter(k => k < h.time.length);
+    const pick = a => idx.map(k => a[k] ?? 0);
+    return {
+      gust: Math.round(Math.max(...pick(h.wind_gusts_10m))),
+      wind: Math.round(Math.max(...pick(h.wind_speed_10m))),
+      tmax: Math.round(Math.max(...pick(h.temperature_2m))),
+      tmin: Math.round(Math.min(...pick(h.temperature_2m))),
+      rain: +pick(h.precipitation).reduce((a,b)=>a+b,0).toFixed(1),
+      code: h.weather_code[i],
+    };
+  } catch(e) { return null; }
+}
+function wxIcon(c){
+  if (c === 0) return '☀️'; if (c <= 2) return '🌤️'; if (c === 3) return '☁️'; if (c <= 48) return '🌫️';
+  if (c <= 67 || (c >= 80 && c <= 82)) return '🌧️'; if (c <= 77 || c === 85 || c === 86) return '🌨️'; return '⛈️';
+}
+
+// ---------- knooppunten graph (from the official node network) ----------
+function chainWays(ways, start){
+  const rest = ways.map(w => w.slice()), out = []; let cur = start;
+  while (rest.length) {
+    let bi = 0, rev = false, bd = Infinity;
+    rest.forEach((w, i) => { const a = d2(cur, w[0]), b = d2(cur, w.at(-1)); if (a < bd) { bd = a; bi = i; rev = false; } if (b < bd) { bd = b; bi = i; rev = true; } });
+    const w = rest.splice(bi, 1)[0]; if (rev) w.reverse(); out.push(...w); cur = w.at(-1);
+  }
+  return out;
+}
+function buildGraph(nodes, segs){
+  const adj = new Map(nodes.map(n => [n.id, []])), byId = new Map(nodes.map(n => [n.id, n]));
+  const near = (pts, cands, tol) => { const hit = new Set(); for (const n of cands) for (const p of pts) if (km(P(p), n) < tol) { hit.add(n.id); break; } return hit; };
+  for (const s of segs) {
+    const all = s.ways.flat();
+    const minLat = Math.min(...all.map(p=>p[0]))-.001, maxLat = Math.max(...all.map(p=>p[0]))+.001;
+    const minLon = Math.min(...all.map(p=>p[1]))-.0015, maxLon = Math.max(...all.map(p=>p[1]))+.0015;
+    const cands = nodes.filter(n => n.lat > minLat && n.lat < maxLat && n.lon > minLon && n.lon < maxLon);
+    let hit = near(s.ways.flatMap(w => [w[0], w.at(-1)]), cands, 0.04);
+    if (hit.size !== 2) hit = near(all, cands, 0.025);
+    if (hit.size !== 2) continue;
+    const [a, b] = [...hit], e = {id:s.id, a, b, len:s.len, ways:s.ways};
+    adj.get(a).push(e); adj.get(b).push(e);
+  }
+  return {adj, byId};
+}
+function findLoops(g, startId, minKm, maxKm){
+  const start = g.byId.get(startId), res = new Map(), visited = new Set([startId]), used = new Set(), path = [];
+  let steps = 0;
+  (function dfs(cur, len){
+    if (++steps > 20000 || res.size > 100) return;
+    for (const e of g.adj.get(cur) || []) {
+      if (used.has(e.id)) continue;
+      const nx = e.a === cur ? e.b : e.a, nl = len + e.len;
+      if (nl + km(g.byId.get(nx), start) > maxKm) continue;
+      if (nx === startId) {
+        if (nl >= minKm && path.length >= 2) {
+          const steps2 = [...path, {e, from:cur}], key = steps2.map(s => s.e.id).sort().join(',');
+          if (!res.has(key)) res.set(key, {steps:steps2, len:nl});
+        }
+        continue;
+      }
+      if (visited.has(nx)) continue;
+      visited.add(nx); used.add(e.id); path.push({e, from:cur});
+      dfs(nx, nl);
+      path.pop(); used.delete(e.id); visited.delete(nx);
+    }
+  })(startId, 0);
+  const target = (minKm + maxKm)/2;
+  return [...res.values()].map(l => ({...l, r: Math.abs(l.len - target)/target + Math.random()*0.2})).sort((a, b) => a.r - b.r);
+}
+function loopPointsG(g, l){
+  let pts = [];
+  for (const st of l.steps) { const n = g.byId.get(st.from); pts = pts.concat(chainWays(st.e.ways, [n.lat, n.lon])); }
+  return pts;
+}
+const loopRefsG = (g, l, startId) => [...l.steps.map(st => g.byId.get(st.from).ref), g.byId.get(startId).ref].join(' → ');
+
+// ---------- candidate walks around the group ----------
+async function fetchCandidates(c, R, lo, hi){
+  const a = `(around:${R},${c.lat.toFixed(5)},${c.lon.toFixed(5)})`;
+  const q = `[out:json][timeout:120];
+    (
+      node["rwn_ref"]${a};
+      relation["network:type"="node_network"]${a};
+      relation["route"~"^(hiking|foot)$"]["network:type"!="node_network"]${a};
+      node["place"~"^(village|town|city|hamlet)$"]${a};
+    )->.lines;
+    .lines out geom;
+    (
+      way["landuse"~"^(forest|meadow|grass|farmland|orchard|recreation_ground)$"]${a};
+      way["natural"~"^(wood|heath|grassland|scrub)$"]${a};
+      way["leisure"~"^(park|nature_reserve)$"]${a};
+      way["landuse"~"^(residential|commercial|retail|industrial)$"]${a};
+    );
+    out tags bb;`;
+  const data = await overpass(q);
+  const nodes = [], segs = [], routes = [], forests = [], places = [], urban = [], nature = [];
+  for (const e of data.elements) {
+    const tg = e.tags || {};
+    if (e.type === 'node' && tg.rwn_ref) nodes.push({id:e.id, ref:tg.rwn_ref, lat:e.lat, lon:e.lon});
+    else if (e.type === 'node' && tg.place) places.push({lat:e.lat, lon:e.lon});
+    else if (e.type === 'relation') {
+      const ways = (e.members || []).filter(m => m.type === 'way' && m.geometry?.length > 1).map(m => m.geometry.map(p => [p.lat, p.lon]));
+      if (!ways.length) continue;
+      if (tg['network:type'] === 'node_network') segs.push({id:e.id, ways, len:ways.reduce((x,w)=>x+lineKm(w),0)});
+      else routes.push({name:tg.name || tg.ref || 'Marked route', ways});
+    }
+    else if (e.type === 'way' && e.bounds) {
+      if (/residential|commercial|retail|industrial/.test(tg.landuse || '')) urban.push(e.bounds);
+      else {
+        nature.push(e.bounds);
+        if (tg.landuse === 'forest' || tg.natural === 'wood') forests.push(e.bounds);
+      }
+    }
+  }
+
+  const cands = [], seen = new Set();
+  // Share of the route's points that lie inside any of the given map areas (bounding boxes)
+  const share = (pts, boxes) => pts.length
+    ? pts.filter(p => boxes.some(b => p[0] >= b.minlat && p[0] <= b.maxlat && p[1] >= b.minlon && p[1] <= b.maxlon)).length / pts.length
+    : 0;
+  const addCand = (kind, name, start, len, pts) => {
+    // Same junctions in a different order are the same walk, so the key ignores start and order
+    const key = kind + ':' + name.replace('Knooppunten ', '').split(' → ').sort().join('-');
+    if (seen.has(key)) return;
+    seen.add(key);
+    // Green walks only: mostly fields and woods, no built-up areas, not starting near a village or town
+    const natureShare = share(pts, nature), urbanShare = share(pts, urban);
+    const nearTown = places.some(p => km(p, start) < 1.5);
+    if (natureShare < 0.6 || urbanShare > 0.02 || nearTown) return;
+    cands.push({key, kind, name, start, len, pts, natureShare, forestShare: share(pts, forests)});
+  };
+
+  // Knooppunten loops: start from the junctions nearest the group
+  const g = buildGraph(nodes, segs);
+  const starts = nodes.filter(n => g.adj.get(n.id)?.length).sort((x, y) => km(x, c) - km(y, c)).slice(0, 40);
+  for (const n of starts) {
+    const ls = findLoops(g, n.id, lo, hi);
+    if (!ls.length) continue;
+    const l = ls[0], pts = loopPointsG(g, l);
+    addCand('loop', 'Knooppunten ' + loopRefsG(g, l, n.id), {lat:n.lat, lon:n.lon}, l.len, pts);
+  }
+  // GR/PR routes that return to where they start
+  for (const r of routes) {
+    const pts = chainWays(r.ways, r.ways[0][0]), len = lineKm(pts);
+    if (len < lo || len > hi || km(P(pts[0]), P(pts.at(-1))) > 0.5) continue;
+    addCand('route', r.name, {lat:pts[0][0], lon:pts[0][1]}, len, pts);
+  }
+  return cands;
+}
+
+// ---------- planning ----------
+function recentKeys(){
+  return new Set(state.walks.filter(w => w.status === 'proposed').slice(-4).map(w => w.key));
+}
+async function planWalk(date, cands, target, used){
+  const ms = state.members, need = Math.ceil(ms.length / 2), time = state.settings.time || '10:00';
+  const recent = recentKeys();
+  const scored = cands.map(c => {
+    const road = ms.map(m => km(m, c.start) * ROAD);
+    const ok = road.filter((r, i) => r <= ms[i].maxDrive).length;
+    const total = road.reduce((a, b) => a + b, 0);
+    // Green first: woods and fields count most, then keep the length and distance sensible
+    const score = ok * 100 - total * 0.5 - Math.abs(c.len - target) * 8 - (recent.has(c.key) ? 40 : 0)
+      + c.natureShare * 150 + c.forestShare * 30;
+    return {c, ok, score};
+  }).filter(x => x.ok >= need && !used.has(x.c.key)).sort((a, b) => b.score - a.score).slice(0, 6);
+
+  let windy = 0, best = null;
+  const wxs = await Promise.all(scored.map(x => fetchWeather(x.c.start.lat, x.c.start.lon, date, time)));
+  scored.forEach((x, i) => {
+    const wx = wxs[i];
+    if (wx && wx.gust >= state.settings.gustCancel) { windy = Math.max(windy, wx.gust); return; }
+    let s = x.score;
+    if (wx && wx.gust >= state.settings.gustCaution) s -= x.c.forestShare * 80;   // windy: keep out of woods
+    if (wx && wx.tmax >= 28) s -= 30;
+    if (!best || s > best.s) best = {...x, s, wx};
+  });
+  const base = {id:uid(), date, time};
+  if (!best) {
+    const reason = windy ? `Gusts up to ${windy} km/h are forecast, over the ${state.settings.gustCancel} km/h limit.`
+      : 'No green walk fits most people\'s maximum drive.';
+    return {...base, status:'cancelled', reason, name:'No walk', key:'', members:[], dists:{}, wx:null};
+  }
+  const c = best.c;
+  const roadRows = await drivingKm(ms, [c.start]);
+  const dists = {};
+  ms.forEach((m, i) => dists[m.id] = roadRows ? roadRows[i][0] : km(m, c.start) * ROAD);
+  return {...base, status:'proposed', reason:'', name:c.name, kind:c.kind, key:c.key,
+    start:c.start, len:+c.len.toFixed(1), pts:c.pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]),
+    natureShare:+c.natureShare.toFixed(2), forestShare:+c.forestShare.toFixed(2), wx:best.wx, dists, members:ms.map(m => m.id)};
+}
+let building = false;
+async function buildCalendar(){
+  if (building) return;
+  if (state.members.length < 2) { toast('Add at least two members first.', true); return; }
+  building = true; $('#planBtn').disabled = true;
+  try {
+    const ms = state.members;
+    // Every walk is 5–8 km. Within that, aim near the shortest maximum the group has chosen.
+    const lo = 5, hi = 8;
+    const target = Math.min(hi, Math.max(lo, Math.min(...ms.map(m => m.maxLen)) * 0.9));
+    const R = Math.min(25000, Math.max(...ms.map(m => m.maxDrive)) * 1000);
+    setProgress('Looking for knooppunten loops and GR/PR routes in nature around the group…', 0.08);
+    const cands = await fetchCandidates(fairCenter(), R, lo, hi);
+    if (!cands.length) {
+      setProgress('No green loops of 5–8 km found outside towns near the group. Try a larger maximum drive for some members.', 1, true);
+      return;
+    }
+    const first = state.settings.startDate || nextSunday();
+    const kept = state.walks.filter(w => w.date < first);
+    const fresh = [], used = new Set();   // a walk is used at most once in each batch
+    for (let i = 0; i < state.settings.count; i++) {
+      const date = addDays(first, 14 * i);
+      setProgress(`Checking weather and distances for ${prettyDate(date)} (${i+1} of ${state.settings.count})…`, 0.2 + 0.8 * i / state.settings.count);
+      const w = await planWalk(date, cands, target, used);
+      if (w.key) used.add(w.key);
+      fresh.push(w);
+    }
+    state.walks = [...kept, ...fresh];
+    const ids = new Set(state.walks.map(w => w.id));
+    Object.keys(state.rsvp).forEach(id => { if (!ids.has(id)) delete state.rsvp[id]; });   // drop answers to replaced walks
+    selectedId = null;
+    save();
+    $('#progress').hidden = true;
+    const ok = fresh.filter(w => w.status === 'proposed').length;
+    toast(`${ok} walk${ok === 1 ? '' : 's'} planned${ok < fresh.length ? `, ${fresh.length - ok} cancelled` : ''}`);
+    renderAll(); fitMap('all');
+  } catch(err) {
+    setProgress(err.message || 'Something went wrong. Try again in a minute.', 1, true);
+  } finally {
+    building = false; $('#planBtn').disabled = false;
+  }
+}
+function setProgress(text, frac, isError){
+  const box = $('#progress');
+  box.hidden = false; box.classList.toggle('error', !!isError);
+  $('#progBar').style.width = Math.round(frac * 100) + '%';
+  $('#progText').textContent = text;
+}
+
+// ---------- small helpers for the UI ----------
+const byDate = (a, b) => a.date.localeCompare(b.date);
+const memberById = id => state.members.find(m => m.id === id);
+const me = () => memberById(state.me);
+const initials = name => String(name).trim().split(/\s+/).map(s => s[0] || '').slice(0, 2).join('').toUpperCase();
+function hue(id){ let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; }
+const av = m => `<span class="av" style="--h:${hue(m.id)}" title="${esc(m.name)}">${esc(initials(m.name))}</span>`;
+const sizeName = s => ({S:'small', M:'medium', L:'large'})[s] || 'medium';
+const upcoming = () => state.walks.filter(w => w.date >= today()).sort(byDate);
+const past = () => state.walks.filter(w => w.date < today()).sort(byDate).reverse();
+const junctions = w => w.kind === 'loop' ? w.name.replace('Knooppunten ', '').split(' → ') : null;
+const walkTitle = w => w.status !== 'proposed' ? 'Cancelled' : w.kind === 'loop' ? 'Knooppunten loop' : w.name;
+function answers(w){
+  const a = state.rsvp[w.id] || {}, g = {yes:[], maybe:[], no:[], none:[]};
+  state.members.forEach(m => g[a[m.id] || 'none'].push(m));
+  return g;
+}
+function walkPill(w){
+  const s = state.settings;
+  if (w.status !== 'proposed') return ['no', 'Cancelled'];
+  if (!w.wx) return ['none', 'Forecast not out yet'];
+  if (w.wx.gust >= s.gustCaution) return ['maybe', 'Windy: open terrain'];
+  if (w.wx.tmax >= 28) return ['maybe', 'Hot: bring water'];
+  if (w.wx.rain >= 4) return ['maybe', 'Wet: muddy paths'];
+  return ['yes', 'Good walking weather'];
+}
+let toastTimer;
+function toast(msg, isError){
+  const t = $('#toast');
+  t.textContent = msg; t.classList.toggle('error', !!isError); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3500);
+}
+function gpx(name, pts){
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Pack Walks" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(name)}</name><trkseg>` +
+    pts.map(p => `<trkpt lat="${p[0]}" lon="${p[1]}"/>`).join('') + '</trkseg></trk></gpx>';
+}
+function download(name, text, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function shareText(w){
+  const lines = [`🐕 Group walk: ${prettyDate(w.date)}, ${w.time}`,
+    `🌲 ${walkTitle(w)} · ${w.len} km`];
+  const j = junctions(w);
+  if (j) lines.push(`🔢 Follow junctions: ${j.join(' → ')}`);
+  lines.push(`📍 Start: https://www.google.com/maps/search/?api=1&query=${w.start.lat},${w.start.lon}`);
+  if (w.wx) lines.push(`${wxIcon(w.wx.code)} ${w.wx.tmin}–${w.wx.tmax}°C, gusts ${w.wx.gust} km/h`);
+  lines.push('Answer in Pack Walks: Join / Maybe / Can\'t');
+  return lines.join('\n');
+}
+
+// ---------- navigation ----------
+let view = 'walks', selectedId = null, addOpen = false;
+const isPhone = () => matchMedia('(max-width: 900px)').matches;
+function setView(v){
+  if (v === 'map' && !isPhone()) v = 'walks';
+  view = v;
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  document.querySelectorAll('.content > .view').forEach(s => s.hidden = s.id !== 'view-' + v);
+  document.body.classList.toggle('show-map', v === 'map');
+  $('#content').scrollTop = 0;
+  setTimeout(() => map.invalidateSize(), 60);
+}
+document.querySelectorAll('.nav button').forEach(b => b.onclick = () => setView(b.dataset.view));
+
+// ---------- map ----------
+const map = L.map('map', {zoomControl:true}).setView([50.85, 4.45], 10);
+// Esri World Topographic: clear map showing forests, parks and paths. No API key needed.
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom:19, attribution:'Tiles © Esri, USGS, NOAA · © OpenStreetMap contributors'
+}).addTo(map);
+const homeLayer = L.layerGroup().addTo(map), walkLayer = L.layerGroup().addTo(map);
+function selectedWalk(){
+  return state.walks.find(w => w.id === selectedId)
+    || upcoming().find(w => w.status === 'proposed') || upcoming()[0] || past()[0] || null;
+}
+function renderMap(){
+  homeLayer.clearLayers(); walkLayer.clearLayers();
+  state.members.forEach(m => {
+    const icon = L.divIcon({className:'home-pin' + (m.id === state.me ? ' me' : ''),
+      html:`<span style="--h:${hue(m.id)}">${esc(initials(m.name))}</span>`, iconSize:[30,30], iconAnchor:[15,15]});
+    L.marker([m.lat, m.lon], {icon, zIndexOffset: m.id === state.me ? 500 : 0})
+      .bindTooltip(`${esc(m.name)} · ${esc(m.town)}`).addTo(homeLayer);
+  });
+  const w = selectedWalk();
+  if (w && w.status === 'proposed' && w.pts?.length) {
+    state.members.forEach(m => L.polyline([[m.lat, m.lon], [w.start.lat, w.start.lon]],
+      {color:'#1f6b4a', weight:1.5, opacity:.6, dashArray:'4 6', interactive:false}).addTo(walkLayer));
+    L.polyline(w.pts, {color:'#ffffff', weight:9, opacity:.85, interactive:false}).addTo(walkLayer);
+    L.polyline(w.pts, {color:ROUTE, weight:5}).bindTooltip(`${esc(walkTitle(w))} · ${w.len} km`).addTo(walkLayer);
+    L.marker([w.start.lat, w.start.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start</span>', iconSize:[50,24], iconAnchor:[25,30]}), zIndexOffset:1000})
+      .addTo(walkLayer);
+  }
+}
+function fitMap(what){
+  const w = selectedWalk(), pts = state.members.map(m => [m.lat, m.lon]);
+  if (what === 'walk' && w?.pts?.length) return map.fitBounds(L.latLngBounds(w.pts).pad(0.3));
+  if (what === 'all' && w?.status === 'proposed' && w.pts?.length) pts.push(...w.pts);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
+}
+$('#fitBtn').onclick = () => fitMap('all');
+
+// ---------- walks view ----------
+function renderWalks(){
+  const s = state.settings, first = s.startDate || nextSunday();
+  $('#planInfo').textContent = `Every two weeks from ${shortDate(first)} at ${s.time}. Green loops of 5–8 km.`;
+  const body = $('#walksBody'), n = state.members.length;
+  if (n < 2) { body.innerHTML = onboardingHTML(); return; }
+  if (!state.walks.length) {
+    body.innerHTML = `<div class="card"><h2>No walks planned yet</h2>
+      <p class="muted" style="margin:6px 0 14px">Pack Walks will pick ${s.count} green loops near the group, one every two weeks, and check the weather for each.</p>
+      <button class="btn primary" data-plan>Plan ${s.count} walks</button></div>`;
+    return;
+  }
+  const w = selectedWalk(), up = upcoming(), old = past();
+  body.innerHTML = heroHTML(w) +
+    (up.length ? `<div><div class="section-label">Coming up</div><div class="list">${up.map(rowHTML).join('')}</div></div>` : '') +
+    (old.length ? `<details class="past"><summary>Past walks (${old.length})</summary><div class="list">${old.map(rowHTML).join('')}</div></details>` : '');
+}
+function onboardingHTML(){
+  const hasMe = !!me(), n = state.members.length;
+  return `<div class="card"><h2>Get your pack together</h2>
+    <p class="muted" style="margin:6px 0 16px">Three steps and Pack Walks plans a green walk every two weeks.</p>
+    <ol class="steps">
+      <li class="${hasMe ? 'done' : ''}"><b>Register yourself</b><span>Your town, your dog, and how far you'll drive.</span>
+        ${hasMe ? '' : '<div class="chips"><button class="btn small primary" data-go="me">Register</button></div>'}</li>
+      <li class="${n >= 2 ? 'done' : ''}"><b>Add the group</b><span>Add members one by one, or import a group file.</span>
+        <div class="chips"><button class="btn small" data-go="group">Add members</button><button class="btn small" data-go="settings">Import file</button></div></li>
+      <li><b>Plan walks</b><span>Pick dates, check the weather, and share each walk on WhatsApp.</span></li>
+    </ol></div>`;
+}
+function heroHTML(w){
+  if (!w) return '';
+  const [pc, pt] = walkPill(w);
+  const isNext = w.id === (upcoming().find(x => x.status === 'proposed') || {}).id;
+  const top = `<div class="hero-top">
+      <span class="eyebrow">${isNext ? 'Next walk' : w.date < today() ? 'Past walk' : 'Planned walk'} · ${countdown(w.date)}</span>
+      <h2>${esc(prettyDate(w.date))}</h2>
+      <div class="when"><span>Start ${esc(w.time)}</span><span class="pill ${pc}">${pt}</span></div>
+    </div>`;
+  if (w.status !== 'proposed') {
+    return `<article class="hero">${top}<div class="cancel-box"><b>No walk on this date</b><span class="muted">${esc(w.reason)}</span>
+      <span class="muted" style="font-size:13.5px">Plan again closer to the date if the forecast improves.</span></div></article>`;
+  }
+  const mine = me(), myD = mine ? w.dists?.[mine.id] : null;
+  const j = junctions(w), g = answers(w);
+  const stats = [
+    ['Length', `${w.len} km`, w.kind === 'loop' ? 'Loop' : 'Marked route'],
+    ['Nature', w.natureShare != null ? `${Math.round(w.natureShare * 100)}%` : 'Green', w.forestShare > 0.3 ? 'Through woods' : 'Fields and woods'],
+    w.wx ? ['Weather', `${wxIcon(w.wx.code)} ${w.wx.tmax}°C`, `Gusts ${w.wx.gust} km/h`] : ['Weather', '—', 'About 16 days before'],
+    ...(mine ? [['Your drive', myD != null ? `${Math.round(myD)} km` : '—', myD != null && myD > mine.maxDrive ? 'Over your maximum' : `Max ${mine.maxDrive} km`]] : []),
+  ];
+  const myAns = mine ? (state.rsvp[w.id] || {})[mine.id] : null;
+  const rsvp = mine
+    ? `<div><div class="section-label">Are you coming?</div><div class="rsvp" role="group" aria-label="Your answer">${[['yes','Join'],['maybe','Maybe'],['no',"Can't"]].map(([v, l]) =>
+        `<button class="rsvp-btn ${v} ${myAns === v ? 'on' : ''}" data-rsvp="${v}" data-walk="${w.id}" aria-pressed="${myAns === v}">${l}</button>`).join('')}</div></div>`
+    : `<button class="btn block" data-go="me">Choose who you are to answer</button>`;
+  const whoRow = (k, label, list) => `<div class="who-row"><span class="${k}">${label} · ${list.length}</span>
+      <div class="avs">${list.length ? list.map(av).join('') : '<span class="muted" style="font-size:13px">No one</span>'}</div></div>`;
+  const pool = g.yes.length + g.maybe.length ? [...g.yes, ...g.maybe] : state.members;
+  const sizes = {S:0, M:0, L:0}; pool.forEach(m => sizes[m.dog?.size || 'M']++);
+  const leads = pool.filter(m => m.dog?.lead).length, notes = pool.filter(m => m.dog?.notes);
+  const drives = state.members.map(m => {
+    const d = w.dists?.[m.id], over = d != null && d > m.maxDrive;
+    return `<div class="drow"><span>${av(m)}<span>${esc(m.name)}<small>${esc(m.town)}</small></span></span>
+      <span class="km ${over ? 'over' : ''}">${d != null ? Math.round(d) + ' km' : 'joined later'}${over ? ' · over max' : ''}</span></div>`;
+  }).join('');
+  return `<article class="hero">${top}<div class="hero-body">
+    <div>
+      <div class="walk-title">${esc(walkTitle(w))}</div>
+      ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
+    </div>
+    <div class="stats">${stats.map(([k, v, sub]) => `<div class="stat"><small>${k}</small><b>${v}</b><span>${esc(sub)}</span></div>`).join('')}</div>
+    ${rsvp}
+    <div><div class="section-label">Who's coming</div><div class="who">
+      ${whoRow('yes', 'Joining', g.yes)}${whoRow('maybe', 'Maybe', g.maybe)}${whoRow('no', "Can't", g.no)}${whoRow('none', 'No answer', g.none)}
+    </div></div>
+    <div><div class="section-label">${g.yes.length + g.maybe.length ? 'Dogs coming' : 'Dogs in the group'}</div>
+      <div class="chips">${sizes.S ? `<span class="chip">${sizes.S} small</span>` : ''}${sizes.M ? `<span class="chip">${sizes.M} medium</span>` : ''}${sizes.L ? `<span class="chip">${sizes.L} large</span>` : ''}${leads ? `<span class="chip">${leads} on a lead</span>` : ''}</div>
+      ${notes.map(m => `<p class="note"><b>${esc(m.dog.name)}</b> (${esc(m.name)}): ${esc(m.dog.notes)}</p>`).join('')}
+    </div>
+    <details class="drives"><summary>Driving distances</summary>${drives}</details>
+    <div class="actions">
+      <button class="btn primary" data-route="${w.id}">Show route on map</button>
+      <a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${w.start.lat},${w.start.lon}" target="_blank" rel="noopener">Directions to start</a>
+      <a class="btn" href="https://wa.me/?text=${encodeURIComponent(shareText(w))}" target="_blank" rel="noopener">Share on WhatsApp</a>
+      <button class="btn" data-gpx="${w.id}">Download GPX</button>
+    </div>
+  </div></article>`;
+}
+function rowHTML(w){
+  const d = new Date(w.date + 'T12:00'), sel = w.id === selectedWalk()?.id;
+  const mine = me(), a = mine ? (state.rsvp[w.id] || {})[mine.id] : null;
+  const going = answers(w).yes.length;
+  const sub = w.status === 'proposed'
+    ? [d.toLocaleDateString('en-GB', {weekday:'long'}), w.wx ? `${wxIcon(w.wx.code)} ${w.wx.tmax}°C` : 'forecast later', `${going} joining`].join(' · ')
+    : w.reason;
+  const dot = w.status !== 'proposed' ? '' : mine
+    ? `<span class="mydot ${a || 'none'}">${({yes:'Joining', maybe:'Maybe', no:"Can't"})[a] || 'Answer'}</span>` : '';
+  return `<button class="row ${sel ? 'sel' : ''} ${w.status !== 'proposed' ? 'cancelled' : ''}" data-walk-row="${w.id}">
+    <span class="datebox"><b>${d.getDate()}</b><span>${d.toLocaleDateString('en-GB', {month:'short'})}</span></span>
+    <span class="row-main"><span class="row-title" style="display:block">${esc(walkTitle(w))}${w.status === 'proposed' ? ` · ${w.len} km` : ''}</span>
+      <span class="row-sub" style="display:block">${esc(sub)}</span></span>
+    ${dot}</button>`;
+}
+$('#planBtn').onclick = buildCalendar;
+$('#walksBody').addEventListener('click', e => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.dataset.plan !== undefined) return buildCalendar();
+  if (t.dataset.walkRow) {
+    selectedId = t.dataset.walkRow; renderWalks(); renderMap(); fitMap('all');
+    $('#walksBody').scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  if (t.dataset.route) { selectedId = t.dataset.route; renderMap(); fitMap('walk'); if (isPhone()) setView('map'); return; }
+  if (t.dataset.gpx) {
+    const w = state.walks.find(x => x.id === t.dataset.gpx);
+    if (w) download(`pack-walk-${w.date}.gpx`, gpx(`${walkTitle(w)} ${w.date}`, w.pts), 'application/gpx+xml');
+    return;
+  }
+  if (t.dataset.rsvp) {
+    const id = t.dataset.walk, val = t.dataset.rsvp;
+    const cur = (state.rsvp[id] || {})[state.me];
+    state.rsvp[id] = {...(state.rsvp[id] || {}), [state.me]: val};
+    if (cur === val) delete state.rsvp[id][state.me];   // tap again to clear your answer
+    save(); renderWalks();
+    toast(cur === val ? 'Answer cleared' : ({yes:'You\'re joining 🐕', maybe:'Marked as maybe', no:'Marked as can\'t come'})[val]);
+  }
+});
+
+// ---------- group view ----------
+function renderGroup(){
+  const n = state.members.length;
+  $('#groupInfo').textContent = n ? `${n} member${n === 1 ? '' : 's'} · ${state.members.map(m => m.dog?.name).filter(Boolean).length} dogs` : 'No members yet.';
+  $('#addToggle').textContent = addOpen ? 'Close' : 'Add member';
+  $('#addBox').innerHTML = addOpen ? memberForm('addForm', null, 'Add to group') : '';
+  $('#groupList').innerHTML = n ? state.members.map(m => `<article class="card member">
+      <div class="member-head">${av(m)}<div><b>${esc(m.name)}</b>${m.id === state.me ? '<span class="tag">You</span>' : ''}<small>${esc(m.town)}</small></div></div>
+      <div>🐕 <b>${esc(m.dog?.name)}</b> <span class="muted">· ${sizeName(m.dog?.size)}${m.dog?.lead ? ' · on a lead' : ''}</span></div>
+      ${m.dog?.notes ? `<p class="note" style="margin:0">${esc(m.dog.notes)}</p>` : ''}
+      <div class="chips"><span class="chip">Drives up to ${m.maxDrive} km</span><span class="chip">Walks up to ${m.maxLen} km</span></div>
+      <div class="member-actions">
+        <button class="btn small" data-locate="${m.id}">Show on map</button>
+        <button class="btn small danger" data-remove="${m.id}">Remove</button>
+      </div></article>`).join('')
+    : `<div class="card"><p class="muted" style="margin:0">Add the people in your WhatsApp group, or import a group file under Settings.</p></div>`;
+}
+$('#addToggle').onclick = () => { addOpen = !addOpen; renderGroup(); if (addOpen) $('#addForm-name')?.focus(); };
+$('#groupList').addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.locate) {
+    const m = memberById(t.dataset.locate);
+    if (m) { if (isPhone()) setView('map'); map.setView([m.lat, m.lon], 13); }
+    return;
+  }
+  if (t.dataset.remove) {
+    if (!t.classList.contains('armed')) {   // first tap arms the button, second tap removes
+      t.classList.add('armed'); t.textContent = 'Tap again to remove';
+      setTimeout(() => { if (t.isConnected) { t.classList.remove('armed'); t.textContent = 'Remove'; } }, 4000);
+      return;
+    }
+    const m = memberById(t.dataset.remove);
+    state.members = state.members.filter(x => x.id !== t.dataset.remove);
+    if (state.me === t.dataset.remove) state.me = null;
+    save(); renderAll(); toast(`${m?.name || 'Member'} removed`);
+  }
+});
+
+// ---------- me view and the member form ----------
+function memberForm(fid, m, submitLabel){
+  const d = m?.dog || {};
+  const seg = (name, opts, val) => `<div class="seg" role="radiogroup">${opts.map(([v, l]) =>
+    `<label><input type="radio" name="${fid}-${name}" value="${v}" ${String(v) === String(val) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`;
+  return `<form class="card form" id="${fid}" data-edit="${m ? m.id : ''}" novalidate>
+    <div class="field"><label for="${fid}-name">Name</label><input id="${fid}-name" required value="${esc(m?.name || '')}" autocomplete="given-name"></div>
+    <div class="field"><label for="${fid}-town">Town</label><input id="${fid}-town" required placeholder="e.g. 3070 Kampenhout" value="${esc(m?.town || '')}">
+      <small>Only the town is stored, never a home address.</small></div>
+    <fieldset><legend>Dog</legend>
+      <div class="field"><label for="${fid}-dog">Dog's name</label><input id="${fid}-dog" required value="${esc(d.name || '')}"></div>
+      <div class="field"><span class="flabel">Size</span>${seg('size', [['S','Small'],['M','Medium'],['L','Large']], d.size || 'M')}</div>
+      <label class="switch"><input type="checkbox" id="${fid}-lead" ${d.lead ? 'checked' : ''}><span class="track"></span>Must stay on a lead</label>
+      <div class="field"><label for="${fid}-notes">Anything others should know</label>
+        <textarea id="${fid}-notes" rows="2" placeholder="e.g. no other dogs, scared of bikes">${esc(d.notes || '')}</textarea></div>
+    </fieldset>
+    <fieldset><legend>Limits</legend>
+      <div class="field"><span class="flabel">Longest drive to a walk</span>${seg('drive', [[15,'15 km'],[20,'20 km'],[25,'25 km']], m?.maxDrive || 20)}</div>
+      <div class="field"><span class="flabel">Longest walk</span>${seg('len', [[5,'5 km'],[6,'6 km'],[7,'7 km'],[8,'8 km']], m?.maxLen ?? 7)}</div>
+    </fieldset>
+    <button class="btn primary block" type="submit">${submitLabel}</button>
+  </form>`;
+}
+function readForm(f){
+  const v = n => f.querySelector('#' + f.id + '-' + n);
+  const r = n => f.querySelector(`input[name="${f.id}-${n}"]:checked`)?.value;
+  return {name:v('name').value.trim(), town:v('town').value.trim(),
+    dog:{name:v('dog').value.trim(), size:r('size') || 'M', lead:v('lead').checked, notes:v('notes').value.trim()},
+    maxDrive:+(r('drive') || 20), maxLen:+(r('len') || 7)};
+}
+document.addEventListener('submit', async e => {
+  const f = e.target.closest('form.form'); if (!f) return;
+  e.preventDefault();
+  const data = readForm(f);
+  const missing = [['name', data.name], ['town', data.town], ['dog', data.dog.name]].find(([, val]) => !val);
+  if (missing) { f.querySelector('#' + f.id + '-' + missing[0]).focus(); toast('Fill in the name, town and dog\'s name.', true); return; }
+  const old = f.dataset.edit && memberById(f.dataset.edit), btn = f.querySelector('[type=submit]'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Finding the town…';
+  try {
+    const pos = old && old.town.toLowerCase() === data.town.toLowerCase() ? {lat:old.lat, lon:old.lon} : await geocode(data.town);
+    if (old) { Object.assign(old, data, pos); toast('Changes saved'); }
+    else {
+      const m = {id:uid(), ...data, ...pos};
+      state.members.push(m);
+      if (f.id === 'meForm' || !state.me) state.me = m.id;
+      if (f.id === 'addForm') addOpen = false;
+      toast(`${m.name} added to the group`);
+    }
+    save(); renderAll();
+  } catch(err) { toast(err.message, true); btn.disabled = false; btn.textContent = label; }
+});
+let registeringNew = false;
+function renderMe(){
+  const mine = me();
+  $('#whoBox').innerHTML = state.members.length ? `<div class="card"><h2>Who are you?</h2>
+    <p class="muted" style="margin:0 0 12px;font-size:14px">Your answers to walks are saved under this name.</p>
+    <div class="who-pick">${state.members.map(m => `<button class="${m.id === state.me ? 'on' : ''}" data-me="${m.id}">${av(m)}${esc(m.name)}</button>`).join('')}
+      <button class="${!mine && registeringNew ? 'on' : ''}" data-me="">＋ I'm new</button></div></div>` : '';
+  $('#profileBox').innerHTML = mine
+    ? `<div><div class="section-label">Your details</div>${memberForm('meForm', mine, 'Save changes')}</div>`
+    : (!state.members.length || registeringNew)
+      ? `<div><div class="section-label">Register</div>${memberForm('meForm', null, 'Register')}</div>`
+      : '';
+}
+$('#whoBox').addEventListener('click', e => {
+  const t = e.target.closest('[data-me]'); if (!t) return;
+  state.me = t.dataset.me || null; registeringNew = !t.dataset.me;
+  save(); renderAll();
+  if (state.me) toast(`Hi ${me().name}`);
+});
+
+// ---------- me chip ----------
+function renderChip(){
+  const m = me();
+  document.querySelectorAll('.me-chip').forEach(el => {
+    el.innerHTML = m ? `${av(m)}<span><small>Signed in as</small><b>${esc(m.name)}</b></span>`
+      : `<span class="av" style="--h:150">?</span><span><small>Not set</small><b>Who are you?</b></span>`;
+  });
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-go]');
+  if (t) setView(t.dataset.go);
+});
+
+// ---------- settings ----------
+function renderSettings(){
+  $('#sStart').value = state.settings.startDate || nextSunday();
+  $('#sCount').value = state.settings.count;
+  $('#sTime').value = state.settings.time;
+  $('#sGustC').value = state.settings.gustCaution;
+  $('#sGustX').value = state.settings.gustCancel;
+}
+[['#sStart','startDate'],['#sCount','count'],['#sGustC','gustCaution'],['#sGustX','gustCancel'],['#sTime','time']].forEach(([id, key]) => {
+  $(id).onchange = e => {
+    const val = e.target.value;
+    state.settings[key] = key === 'count' ? Math.max(1, Math.min(12, +val || 6)) : key.startsWith('gust') ? +val : val;
+    save(); renderWalks(); toast('Saved');
+  };
+});
+$('#exportBtn').onclick = () => {
+  download('pack-walks-' + today() + '.json', JSON.stringify(state, null, 2), 'application/json');
+  toast('Group file downloaded');
+};
+$('#importBtn').onclick = () => $('#importFile').click();
+$('#importFile').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const d = JSON.parse(await file.text());
+    if (!Array.isArray(d.members)) throw new Error('This is not a Pack Walks file.');
+    const keepMe = state.me;
+    state = {...defaults(), ...d, settings:{...defaults().settings, ...d.settings}};
+    if (keepMe && memberById(keepMe)) state.me = keepMe;
+    selectedId = null; save(); renderAll(); fitMap('all');
+    toast(`Imported ${state.members.length} members and ${state.walks.length} walks`);
+  } catch(err) { toast(err.message, true); }
+  e.target.value = '';
+};
+// Looks up every member's town again, so the map shows the real place rather than the coordinates stored in a file
+$('#relocBtn').onclick = async () => {
+  const btn = $('#relocBtn'); if (!state.members.length) return toast('No members to locate.', true);
+  btn.disabled = true;
+  const failed = [];
+  for (const [i, m] of state.members.entries()) {
+    btn.textContent = `Locating ${i + 1} of ${state.members.length}…`;
+    try { const g = await geocode(m.town); m.lat = g.lat; m.lon = g.lon; }
+    catch(e) { failed.push(m.town); }
+    await new Promise(r => setTimeout(r, 1100));   // Nominatim allows about one request per second
+  }
+  save(); renderAll(); fitMap('all');
+  btn.disabled = false; btn.textContent = 'Re-locate towns';
+  toast(failed.length ? 'Could not find: ' + failed.join(', ') : 'Towns updated. Plan the walks again to use them.', !!failed.length);
+};
+$('#resetBtn').onclick = () => {
+  const b = $('#resetBtn');
+  if (!b.classList.contains('armed')) {   // first click arms, second click clears
+    b.classList.add('armed'); b.textContent = 'Click again to delete everything';
+    setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Clear all data'; }, 4000);
+    return;
+  }
+  try { localStorage.removeItem(LS); } catch(e) {}
+  state = defaults(); selectedId = null; addOpen = false;
+  b.classList.remove('armed'); b.textContent = 'Clear all data';
+  renderAll(); setView('walks'); toast('All data cleared');
+};
+
+// ---------- init ----------
+function renderAll(){ renderChip(); renderWalks(); renderGroup(); renderMe(); renderSettings(); renderMap(); }
+matchMedia('(max-width: 900px)').addEventListener('change', () => { if (view === 'map' && !isPhone()) setView('walks'); map.invalidateSize(); });
+renderAll();
+setView(state.members.length && !me() ? 'me' : 'walks');
+fitMap('all');
+</script>
+</body>
+</html>
