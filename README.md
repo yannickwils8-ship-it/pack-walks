@@ -95,7 +95,7 @@ On a phone the navigation sits at the bottom, and the map has its own **Map** ta
 
 - **Walk types:** official knooppunten loops (the numbered walking network) and GR/PR routes that return to their start.
 - **Length:** always **5 to 8 km**, and preferably no longer than the shortest maximum in the group. Lengths vary from walk to walk across that range.
-- **Nature only:** at least 60% of the route must run through woods, fields, meadows, heath, parks or nature reserves. Routes through built-up areas, and walks starting within 1.5 km of a village or town, are skipped. Woods such as Zoniënwoud or Meerdalwoud rank highest.
+- **Nature first:** at least 45% of the route must run through woods, fields, meadows, heath, parks or nature reserves, and the greener the better. Routes with more than a quarter of their length in built-up land are skipped, and so are walks starting within 1.5 km of a town or 700 m of a village centre (hamlets don't count). Woods such as Zoniënwoud or Meerdaalwoud rank highest.
 - **Distance:** at least half the group must be within their maximum drive.
 - **Variety:**
   - Starting points are spread over the whole area around the group, and up to three different loops are tried from each junction.
