@@ -117,7 +117,7 @@ class MainPass(osmium.SimpleHandler):
         if 'rwn_ref' in t:
             self.add('k', la, lo, [t['rwn_ref'], q(la), q(lo)])
         if t.get('place') in ('village', 'town', 'city', 'hamlet'):
-            self.add('pl', la, lo, [q(la), q(lo)])
+            self.add('pl', la, lo, [q(la), q(lo), t['place'][0]])   # c, t, v or h
         if t.get('amenity') == 'drinking_water':
             self.add('wa', la, lo, [q(la), q(lo)])
         if t.get('amenity') == 'parking' and t.get('access') not in ('private', 'no', 'customers'):

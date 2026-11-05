@@ -616,7 +616,7 @@ async function planDataTiles(c, R){
   const meta = await loadTiles('meta', c, R / 1000);
   const gr = mergeMeta(meta, 'gr', joinKey);
   return {nodes:kpsFrom(meta), segs:segsFrom(meta), routes:routesFrom(meta),
-    places:mergeMeta(meta, 'pl', joinKey).map(it => ({lat:it[0] / QD, lon:it[1] / QD})),
+    places:mergeMeta(meta, 'pl', joinKey).map(it => ({lat:it[0] / QD, lon:it[1] / QD, size:it[2]})),
     forests:gr.filter(g => g[0] === 'f').map(boxOf), nature:gr.filter(g => g[0] !== 'u').map(boxOf), urban:gr.filter(g => g[0] === 'u').map(boxOf)};
 }
 
@@ -702,7 +702,7 @@ async function planDataLive(c, R){
   for (const e of data.elements) {
     const tg = e.tags || {};
     if (e.type === 'node' && tg.rwn_ref) nodes.push({id:e.id, ref:tg.rwn_ref, lat:e.lat, lon:e.lon});
-    else if (e.type === 'node' && tg.place) places.push({lat:e.lat, lon:e.lon});
+    else if (e.type === 'node' && tg.place) places.push({lat:e.lat, lon:e.lon, size:tg.place[0]});
     else if (e.type === 'relation') {
       const ways = (e.members || []).filter(m => m.type === 'way' && m.geometry?.length > 1).map(m => m.geometry.map(p => [p.lat, p.lon]));
       if (!ways.length) continue;
@@ -730,11 +730,12 @@ async function fetchCandidates(c, R, lo, hi){
     const key = kind + ':' + name.replace('Knooppunten ', '').split(' → ').sort().join('-');
     if (seen.has(key)) return;
     seen.add(key);
-    // Green walks only: mostly fields and woods, no built-up areas, not starting near a village or town
+    // Green walks: mostly fields and woods, little built-up land, not starting in a town or village.
+    // Hamlets don't count; places of unknown size (older data) keep the old 1.5 km rule.
     const natureShare = share(pts, nature), urbanShare = share(pts, urban);
-    const nearTown = places.some(p => km(p, start) < 1.5);
-    if (natureShare < 0.6 || urbanShare > 0.02 || nearTown) return;
-    cands.push({key, kind, name, start, len, pts, cells: cells || cellsOf(pts), natureShare, forestShare: share(pts, forests)});
+    const nearTown = places.some(p => p.size !== 'h' && km(p, start) < (p.size === 'v' ? 0.7 : 1.5));
+    if (natureShare < 0.45 || urbanShare > 0.25 || nearTown) return;
+    cands.push({key, kind, name, start, len, pts, cells: cells || cellsOf(pts), natureShare, urbanShare, forestShare: share(pts, forests)});
   };
 
   // Knooppunten loops. Starting junctions are spread over the whole search area (taken in turn from
@@ -790,7 +791,7 @@ async function planWalk(date, cands, target, cap, ctx){
     // Fairness: favour places that are close for whoever has driven the most so far in this batch
     const heaviest = Math.max(...ms.map((m, i) => (ctx.driven[m.id] || 0) + road[i]));
     const score = ok * 100
-      + c.natureShare * 150 + c.forestShare * 30          // green first
+      + c.natureShare * 150 + c.forestShare * 30 - c.urbanShare * 150   // green first, towns last
       - Math.abs(c.len - target) * 25                      // close to this date's length
       - Math.max(0, c.len - cap) * 60                      // over the group's shortest maximum
       - road.reduce((a, b) => a + b, 0) * 0.4              // total driving
