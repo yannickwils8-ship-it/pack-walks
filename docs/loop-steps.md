@@ -31,3 +31,31 @@ Time: about the same (3–10 s).
 New information now measurable (examples): Zoniënwoud trail loops 66–76% unpaved; Meerdaalwoud loops 66–76% unpaved; Woluwe 3–23% unpaved; Laeken 4–15% unpaved. Sidewalks are rarely mapped (0–7% of streets in Woluwe and Laeken), so sidewalk information will have little effect for now.
 
 Verdict: **kept.** Five loops changed. Out & back fell in each of them (Zoniënwoud 7% → 4%, Woluwe 17% → 10% and 16% → 8%), and distance got closer (Woluwe −11% → −2%, Zoniënwoud −2%/+4% → +2%/+1%). Roundness went up in Zoniënwoud (0.14 → 0.44) but down in two Woluwe loops (0.27 → 0.16, 0.14 → 0.17); the new score in step 5 targets that. Nothing got slower. Above all, steps 2 and 7 need this data (surface, water, lead).
+
+
+## Step 2: cost per metre (method table plus dog settings)
+
+What changed: every link now costs length × the method's cost per metre (path 1.0, track 1.1, footway 1.15, residential 1.7, tertiary 3.0, primary 6.0, trunk not walkable; unpaved footway/track/cycleway at most 1.05; difficult ×1.2). Quiet roads up to tertiary, primary and secondary are now part of the walking graph, so a loop can cross one where needed. Two settings were measured:
+
+- **M, method only:** nature preference p = 0, nothing else.
+- **D, with dog settings:** p = +0.5 (paths and unpaved ×0.825, roads ×1.3), big roads (trunk to secondary) ×8, lead-only ways ×1.1, links within about 30 m of water ×0.95.
+
+Forest cases (A, B): nearly unchanged with both settings; the loops were already 77–100% on paths. The knooppunten loop in Meerdaalwoud now shows its 13% on roads as "road" instead of "not on the graph".
+
+Urban cases, trail loops only, averages (individual loops in the measurement output):
+
+| | Step 1 | M | D |
+|---|---|---|---|
+| Unpaved, Laeken (D) | 11% | 11% | **16%** |
+| Unpaved, Woluwe (C) | 13% | 9% | 12% |
+| Out & back, Laeken | 25% | 23% | 24% |
+| Out & back, Woluwe | 13% | 15% | 14% |
+| Roundness, Laeken | 0.40 | 0.44 | 0.43 |
+| Roundness, Woluwe | 0.29 | 0.30 | 0.33 |
+| Junctions passed twice, Laeken | 5.5 | 6.3 | 4.5 |
+| Distance off target, Laeken | 2.2% | 1.2% | 2.7% |
+| Distance off target, Woluwe | 1.2% | 3.5% | 3.8% |
+
+Time: unchanged (3–9 s).
+
+Verdict: **kept, with the dog settings (D).** They raise the unpaved share in town by about half (Laeken 11% → 16%), make loops a little rounder, and pass fewer junctions twice; out & back is about the same. Distance accuracy is a little worse in Woluwe (one loop +7%); step 4's length correction addresses that. The main out-and-back problem in towns is still open and is step 4's job.

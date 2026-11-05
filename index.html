@@ -1366,8 +1366,30 @@ const DOMAINS = [
   ['Wallonia', ['Hautes Fagnes', "Forêt d'Anlier", 'Hertogenwald', 'Bois de la Houssière']],
 ];
 const cr = {mode:'area', point:null, km:state.settings.createKm || 6, ctx:null, pool:[], shown:[], options:[], sel:0, current:null, busy:false};
-// Cost per km by path type: trails and forest tracks are cheapest, quiet roads only to connect them
-const PATH_WEIGHT = {path:1, footway:1, track:0.9, bridleway:0.95, steps:1.5, cycleway:1.3, pedestrian:1.6, living_street:1.8, service:2.5, unclassified:2.5, residential:2.5};
+// Cost per metre (1 = ideal): routes look for the most pleasant way, not the shortest; a link weighs
+// length × cost. Base table and adjustments come from the running-app method; DOG_COST holds the
+// settings for walking with dogs (p from -1 = rather roads to +1 = rather nature).
+const BASE_COST = {trunk:Infinity, primary:6.0, secondary:4.5, tertiary:3.0, unclassified:1.9, residential:1.7, living_street:1.4,
+  service:1.8, pedestrian:1.3, footway:1.15, path:1.0, track:1.1, cycleway:1.6, bridleway:1.1, steps:1.0};
+const DOG_COST = {p:0.5, avoidBigRoads:true, avoidSteps:false, lead:1.1, water:0.95};
+const ROAD_TYPES = /^(trunk|primary|secondary|tertiary|unclassified)$/, BIG_ROADS = /^(trunk|primary|secondary)$/;
+const PATH_TYPES = /^(path|track|bridleway|steps)$/;
+// f: way flags from the data (1 paved, 2 unpaved, 4 sidewalk, 8 difficult, 16 lead). Null = not walkable.
+function costPerMetre(hw, f = 0, nearWater = false, s = DOG_COST){
+  let c = BASE_COST[hw];
+  if (c == null || c === Infinity) return null;
+  const unpaved = (f & 2) > 0, p = s.p;
+  if (unpaved && /^(footway|track|cycleway)$/.test(hw)) c = Math.min(c, 1.05);
+  if (f & 8) c *= 1.2;
+  if (PATH_TYPES.test(hw) || unpaved) c *= p > 0 ? 1 - 0.35 * p : 1 - 0.9 * p;
+  else if (ROAD_TYPES.test(hw)) c = Math.max(1, p > 0 ? c * (1 + 0.6 * p) : c / (1 - 0.6 * p));
+  if (s.avoidBigRoads && BIG_ROADS.test(hw)) c *= 8;   // only used when there's no other way
+  if (s.avoidSteps && hw === 'steps') c *= 10;
+  if (f & 16) c *= s.lead;
+  if (nearWater) c *= s.water;
+  return c;
+}
+const TRAIL_COST = 1.2;   // links at most this cost count as trails when placing a loop's waypoints
 
 class MinHeap {
   constructor(){ this.k = []; this.v = []; }
@@ -1455,9 +1477,18 @@ async function loadAreaTiles(S, R){
   // Data version 2 stores per way: type, flags (paved, unpaved, sidewalk, difficult, lead), then the shape
   const first = (ix.v || 1) >= 2 ? 2 : 1;
   // Ways from neighbouring tiles overlap; points with the same coordinates are the same junction
+  // Water for the dogs (points every 25 m along streams, rivers and shores) as ~20 m squares
+  const waterCells = new Set(), wcell = (a, b) => a * 1e6 + b;
+  for (const flat of mergeMeta(meta, 'wt', it => it.slice(0, 6).join())) for (const p of decode(flat)) waterCells.add(wcell(Math.round(p[0] / 0.00018), Math.round(p[1] / 0.00028)));
+  const nearWater = (p, q) => {   // midpoint of a link within roughly 30 m of water
+    const a = Math.round((p[0] + q[0]) / 2 / 0.00018), b = Math.round((p[1] + q[1]) / 2 / 0.00028);
+    for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) if (waterCells.has(wcell(a + da, b + db))) return true;
+    return false;
+  };
   for (const t of paths) for (const w of t.w) {
-    const hw = ix.walk[w[0]], wt = PATH_WEIGHT[hw], f = first === 2 ? w[1] : 0, wide = WIDE_WAY.test(hw);
-    if (!wt) continue;   // way types without a cost yet (bigger roads) stay out of the walking graph
+    const hw = ix.walk[w[0]], f = first === 2 ? w[1] : 0, wide = WIDE_WAY.test(hw);
+    const dry = costPerMetre(hw, f), wet = costPerMetre(hw, f, true);
+    if (dry == null) continue;   // not walkable (e.g. trunk roads)
     let la = 0, lo = 0, prev = null;
     for (let i = first; i < w.length; i += 2) {
       la += w[i]; lo += w[i + 1];
@@ -1467,9 +1498,10 @@ async function loadAreaTiles(S, R){
         const eid = prev < id ? prev + '-' + id : id + '-' + prev;
         if (!seen.has(eid)) {
           seen.add(eid);
-          const len = km(P(coords.get(prev)), P(coords.get(id)));
-          link(prev, id, len, len * wt, eid, wide, hw, f); link(id, prev, len, len * wt, eid, wide, hw, f);
-          if (wt <= 1.3) { trail.add(prev); trail.add(id); }
+          const pa = coords.get(prev), pb = coords.get(id), len = km(P(pa), P(pb));
+          const c = waterCells.size && nearWater(pa, pb) ? wet : dry;
+          link(prev, id, len, len * c, eid, wide, hw, f); link(id, prev, len, len * c, eid, wide, hw, f);
+          if (dry <= TRAIL_COST) { trail.add(prev); trail.add(id); }
         }
       }
       prev = id;
@@ -1548,13 +1580,14 @@ async function loadAreaLive(S, R){
   const WIDE = /^(track|bridleway|service|unclassified|pedestrian)$/;   // room for a group with dogs
   const link = (a, b, len, cost, eid, wide) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid, wide}); };
   for (const w of ways) {
-    const hw = w.tags?.highway || '', wt = PATH_WEIGHT[hw] || 2.5, wide = WIDE.test(hw);
+    const hw = w.tags?.highway || '', wt = costPerMetre(hw), wide = WIDE.test(hw);
+    if (wt == null) continue;
     for (let i = 1; i < w.nodes.length; i++) {
       const a = w.nodes[i - 1], b = w.nodes[i], pa = coords.get(a), pb = coords.get(b);
       if (!pa || !pb) continue;
       const len = km(P(pa), P(pb)), eid = a < b ? a + '-' + b : b + '-' + a;
       link(a, b, len, len * wt, eid, wide); link(b, a, len, len * wt, eid, wide);
-      if (wt <= 1.3) { trail.add(a); trail.add(b); }
+      if (wt <= TRAIL_COST) { trail.add(a); trail.add(b); }
     }
   }
   return {coords, G, trail, kps, segs, routes, dog};
