@@ -1592,24 +1592,57 @@ async function loadAreaLive(S, R){
   }
   return {coords, G, trail, kps, segs, routes, dog};
 }
+// Nearest map point; once the start's connected part of the map is known (area.comp), only points in it
 function nearestNode(area, p, trailOnly){
   const pool = trailOnly && area.trail.size ? area.trail : area.G.keys(), q = [p.lat, p.lon];
   let best = null, bd = Infinity;
-  for (const id of pool) { const c = area.coords.get(id); if (!c) continue; const d = d2(c, q); if (d < bd) { bd = d; best = id; } }
+  for (const id of pool) {
+    if (area.comp && !area.comp.has(id)) continue;
+    const c = area.coords.get(id); if (!c) continue;
+    const d = d2(c, q); if (d < bd) { bd = d; best = id; }
+  }
   return best;
 }
-// Cheapest path; edges already used earlier in the loop cost six times more, to avoid walking back the same way
-function dijkstra(G, src, dst, used){
+// The part of the map connected to the start. The nearest points can lie on a small isolated piece
+// (a path cut off at the map's edge, a courtyard), so the nearest point with a large connected part wins.
+function startComponent(area, S){
+  const q = [S.lat, S.lon], near = [];
+  area.G.forEach((_, id) => { const c = area.coords.get(id); if (c) near.push([d2(c, q), id]); });
+  near.sort((a, b) => a[0] - b[0]);
+  let best = null;
+  for (const [, id] of near.slice(0, 30)) {
+    if (best && best.has(id)) continue;
+    const comp = new Set([id]), todo = [id];
+    while (todo.length) for (const e of area.G.get(todo.pop()) || []) if (!comp.has(e.to)) { comp.add(e.to); todo.push(e.to); }
+    if (!best || comp.size > best.size) best = comp;
+    if (comp.size > 2000) break;
+  }
+  return best;
+}
+// Cheapest path with A*: it explores towards the destination first. Its estimate of the cost still to go
+// is the straight-line distance × the lowest cost per metre on the map, which is never too high, so the
+// result is the same as Dijkstra's. Links already used earlier in the loop cost six times more.
+function route(area, src, dst, used){
   if (src === dst) return {nodes:[src], edges:[]};
-  const dist = new Map([[src, 0]]), prev = new Map(), heap = new MinHeap();
-  heap.push(0, src);
+  const G = area.G, C = area.coords;
+  if (area.minCost == null) {
+    area.minCost = Infinity;
+    G.forEach(list => list.forEach(e => { if (e.len > 0) area.minCost = Math.min(area.minCost, e.cost / e.len); }));
+  }
+  const t = C.get(dst), cosT = Math.cos(t[0] * Math.PI / 180), h0 = area.minCost * 111.32 * 0.999;
+  // Flat-earth distance in km: accurate to well under 0.1% over a few km, hence the small safety margin
+  const h = id => { const c = C.get(id), dy = c[0] - t[0], dx = (c[1] - t[1]) * cosT; return Math.sqrt(dx * dx + dy * dy) * h0; };
+  const g = new Map([[src, 0]]), prev = new Map(), heap = new MinHeap(), done = new Set();
+  heap.push(h(src), src);
   while (heap.size) {
-    const [d, u] = heap.pop();
+    const u = heap.pop()[1];
     if (u === dst) break;
-    if (d > dist.get(u)) continue;
+    if (done.has(u)) continue;
+    done.add(u);
+    const gu = g.get(u);
     for (const e of G.get(u) || []) {
-      const c = d + e.cost * (used.has(e.eid) ? 6 : 1);
-      if (c < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, c); prev.set(e.to, {from:u, e}); heap.push(c, e.to); }
+      const c = gu + e.cost * (used.has(e.eid) ? 6 : 1);
+      if (c < (g.get(e.to) ?? Infinity)) { g.set(e.to, c); prev.set(e.to, {from:u, e}); heap.push(c + h(e.to), e.to); }
     }
   }
   if (!prev.has(dst)) return null;
@@ -1629,7 +1662,7 @@ function buildTrailLoop(area, S, L, bearing){
     const used = new Set(), nodes = [startId];
     let len = 0, reused = 0, wide = 0, ok = true;
     for (let i = 1; i < seq.length; i++) {
-      const res = dijkstra(area.G, seq[i - 1], seq[i], used);
+      const res = route(area, seq[i - 1], seq[i], used);
       if (!res) { ok = false; break; }
       res.edges.forEach(e => { if (used.has(e.eid)) reused += e.len; if (e.wide) wide += e.len; used.add(e.eid); len += e.len; });
       nodes.push(...res.nodes.slice(1));
@@ -1717,9 +1750,9 @@ async function createLoop(){
       // From a parking at the edge, head into the area
       if (park && km(park, pl) > 0.3) { bearing = bearingTo(park, pl); spread = 60; }
     } else { origin = cr.point; place = cr.pointName || null; }
-    const r0 = L / (2 * Math.PI * 1.25);
     cStatus('Loading paths, tracks and knooppunten around the start…');
-    const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
+    const area = await loadArea(origin, L / 2.2 + 1.5);   // radius in km, enough room for a loop of L km
+    area.comp = startComponent(area, origin);
     cStatus(`Building routes of about ${fmtKm(L)}…`);
     await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
     cr.ctx = {area, origin, place, bearing, spread, L, outline};
