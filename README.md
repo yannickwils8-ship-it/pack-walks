@@ -11,6 +11,27 @@ Pack Walks helps a small group of dog owners in Belgium pick a green walk every 
 | `pack-walks-test-group.json` | Four older test members (Gent, Leuven, Mechelen, Hasselt). |
 | `README.md` | This documentation. |
 | `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png` | Let phones install the app on the home screen. |
+| `tools/build_data.py` | Builds the walk data the app uses (see "Walk data" below). |
+| `.github/workflows/pages.yml` | Publishes the site and rebuilds the walk data every week. |
+
+## Walk data
+
+To be fast and reliable, the app doesn't ask public map servers for paths every time. Every Monday, GitHub builds a compact copy of Belgium's walking data from OpenStreetMap:
+
+- walking paths and forest tracks,
+- knooppunten and the links between them,
+- marked walking routes,
+- dog places (off-leash zones, lead-only and no-dog areas, drinking water),
+- parkings, villages, and green or built-up areas.
+
+It also includes from **Agentschap Natuur en Bos**:
+
+- the official **off-leash zones** (hondenzones) in Flanders,
+- the official **nature areas** with their outlines.
+
+The data is split into map squares of about 10 × 10 km, and the app only downloads the squares it needs. It's published with the website but not stored in the repository, so the repository stays small. Code changes go live in about a minute; a full data rebuild takes longer.
+
+If the data isn't available (for example when `index.html` is opened as a file on your computer), the app falls back to the live public map servers, which can be slow.
 
 ## Online with GitHub Pages
 
@@ -93,7 +114,7 @@ Make a loop yourself, for any day.
 
 1. Open **Create**.
 2. Choose where:
-   - **Nature area:** pick a domain from the list (for example Zoniënwoud, Hallerbos, Meerdaalwoud, Kalmthoutse Heide), or type the name of another one.
+   - **Nature area:** pick one of the 300+ Natuur en Bos areas, listed nearest to the group first with their distance, or a Walloon area at the bottom. You can also type the name of any other area. The chosen area's outline is shown on the map.
    - **Point on map:** click the map where the walk should start. On a phone, tap **Choose on map** and then tap the map.
 3. Set the **distance** with the slider (3–15 km).
 4. Press **Create loop**. This takes from a few seconds to about a minute, depending on how busy the public map servers are.
@@ -111,7 +132,8 @@ Each option shows its length and walking time, and whether it **matches your dis
 - Paths where dogs are banned are left out of trail loops. Official and knooppunten routes that cross a no-dog area are labelled and ranked last.
 - On the map: **off-leash zones** in green, **lead-only** areas with an orange dashed edge, **no-dog** areas and paths in red, and **drinking water** as blue dots.
 - Each option is labelled when it passes an off-leash zone, needs a lead on part of the way, passes water points, or runs mostly on wide tracks (easier with 5–10 dogs).
-- This information comes from OpenStreetMap and isn't complete everywhere, so always check the signs at the entrance.
+- Off-leash zones come from Natuur en Bos (official, Flanders) and from OpenStreetMap. The other dog information comes from OpenStreetMap and isn't complete everywhere, so always check the signs at the entrance.
+- In Natuur en Bos areas dogs must stay on a lead and on the paths, except inside the marked off-leash zones.
 
 Select an option to see it on the map, get directions, download the GPX, share it on WhatsApp, or **Add walk** to the group calendar on a date. A walk added by hand replaces any walk already planned that day, and **Plan walks** leaves it in place. If the forecast for that day shows gusts above the cancel limit, the app won't add it.
 

@@ -392,7 +392,7 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
         </div>
         <input type="file" id="importFile" accept=".json,application/json" hidden>
       </div>
-      <p class="fine">Walks: © OpenStreetMap contributors (knooppunten, GR/PR routes, land use). Map: © Esri. Weather: Open-Meteo. Driving distances: OSRM. Town search: Nominatim.</p>
+      <p class="fine">Walks: © OpenStreetMap contributors (knooppunten, GR/PR routes, land use). Map: © Esri. Off-leash zones and nature areas in Flanders: © Agentschap Natuur en Bos. Weather: Open-Meteo. Driving distances: OSRM. Town search: Nominatim.</p>
     </section>
   </main>
 
@@ -542,6 +542,68 @@ function wxIcon(c){
   if (c <= 67 || (c >= 80 && c <= 82)) return '🌧️'; if (c <= 77 || c === 85 || c === 86) return '🌨️'; return '⛈️';
 }
 
+// ---------- pre-built walk data (published with the site, rebuilt every week) ----------
+// When it isn't there (e.g. the page opened as a local file), the app asks the live map servers instead
+const QD = 100000;   // stored coordinates are integers of 1e-5 degree
+let dataIndexP = null, anbP = null;
+function dataIndex(){
+  if (!dataIndexP) dataIndexP = fetch('data/index.json')
+    .then(r => { if (!r.ok) throw new Error('No walk data'); return r.json(); })
+    .then(ix => ({...ix, pathSet:new Set(ix.paths), metaSet:new Set(ix.meta)}))
+    .catch(e => { dataIndexP = null; throw e; });
+  return dataIndexP;
+}
+const hasData = () => dataIndex().then(() => true, () => false);
+function anbData(){
+  if (!anbP) anbP = fetch('data/anb.json').then(r => r.ok ? r.json() : {zones:[], areas:[]}).catch(() => ({zones:[], areas:[]}));
+  return anbP;
+}
+const tileCache = new Map();
+function tileJSON(kind, key){
+  const id = kind + '/' + key;
+  if (!tileCache.has(id)) tileCache.set(id, fetch('data/' + id + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
+  return tileCache.get(id);
+}
+// All tiles of one kind within R km of point S
+async function loadTiles(kind, S, R){
+  const ix = await dataIndex(), [th, tw] = ix.tile, set = kind === 'paths' ? ix.pathSet : ix.metaSet, keys = [];
+  const dlat = R / 111.32, dlon = R / (111.32 * Math.cos(S.lat * Math.PI / 180));
+  for (let x = Math.floor((S.lon - dlon) / tw); x <= Math.floor((S.lon + dlon) / tw); x++)
+    for (let y = Math.floor((S.lat - dlat) / th); y <= Math.floor((S.lat + dlat) / th); y++)
+      if (set.has(x + '_' + y)) keys.push(x + '_' + y);
+  return (await Promise.all(keys.map(k => tileJSON(kind, k)))).filter(Boolean);
+}
+function decode(flat, from = 0){
+  const out = []; let la = 0, lo = 0;
+  for (let i = from; i < flat.length; i += 2) { la += flat[i]; lo += flat[i + 1]; out.push([la / QD, lo / QD]); }
+  return out;
+}
+function bbOf(pts){
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const p of pts) { if (p[0] < b[0]) b[0] = p[0]; if (p[1] < b[1]) b[1] = p[1]; if (p[0] > b[2]) b[2] = p[0]; if (p[1] > b[3]) b[3] = p[1]; }
+  return b;
+}
+const boxOf = g => ({minlat:g[1] / QD, minlon:g[2] / QD, maxlat:g[3] / QD, maxlon:g[4] / QD});
+// One list from several tiles, without the items that neighbouring tiles both contain
+function mergeMeta(tiles, kind, keyOf){
+  const seen = new Set(), out = [];
+  for (const t of tiles) for (const it of t[kind] || []) { const k = keyOf(it); if (!seen.has(k)) { seen.add(k); out.push(it); } }
+  return out;
+}
+const joinKey = it => it.join();
+const dogKey = it => it.p ? it.p.join() : it.n + ':' + it.r[0].slice(0, 6).join();
+const kpsFrom = meta => mergeMeta(meta, 'k', it => it[1] + ',' + it[2]).map(it => ({id:it[1] * 1e6 + it[2], ref:it[0], lat:it[1] / QD, lon:it[2] / QD}));
+const segsFrom = meta => mergeMeta(meta, 's', it => it[0]).map(it => { const ways = it[1].map(f => decode(f)); return {id:it[0], ways, len:ways.reduce((x, w) => x + lineKm(w), 0)}; });
+const routesFrom = meta => mergeMeta(meta, 'r', it => it[0]).map(it => ({name:it[1], ways:it[2].map(f => decode(f))}));
+// What "Plan walks" needs around the group, from the tiles
+async function planDataTiles(c, R){
+  const meta = await loadTiles('meta', c, R / 1000);
+  const gr = mergeMeta(meta, 'gr', joinKey);
+  return {nodes:kpsFrom(meta), segs:segsFrom(meta), routes:routesFrom(meta),
+    places:mergeMeta(meta, 'pl', joinKey).map(it => ({lat:it[0] / QD, lon:it[1] / QD})),
+    forests:gr.filter(g => g[0] === 'f').map(boxOf), nature:gr.filter(g => g[0] !== 'u').map(boxOf), urban:gr.filter(g => g[0] === 'u').map(boxOf)};
+}
+
 // ---------- knooppunten graph (from the official node network) ----------
 function chainWays(ways, start){
   const rest = ways.map(w => w.slice()), out = []; let cur = start;
@@ -601,7 +663,8 @@ function loopPointsG(g, l){
 const loopRefsG = (g, l, startId) => [...l.steps.map(st => g.byId.get(st.from).ref), g.byId.get(startId).ref].join(' → ');
 
 // ---------- candidate walks around the group ----------
-async function fetchCandidates(c, R, lo, hi){
+// Live version of planDataTiles, used when the pre-built data isn't available
+async function planDataLive(c, R){
   const a = `(around:${R},${c.lat.toFixed(5)},${c.lon.toFixed(5)})`;
   const q = `[out:json][timeout:120];
     (
@@ -638,7 +701,10 @@ async function fetchCandidates(c, R, lo, hi){
       }
     }
   }
-
+  return {nodes, segs, routes, forests, places, urban, nature};
+}
+async function fetchCandidates(c, R, lo, hi){
+  const {nodes, segs, routes, forests, places, urban, nature} = await hasData() ? await planDataTiles(c, R) : await planDataLive(c, R);
   const cands = [], seen = new Set();
   // Share of the route's points that lie inside any of the given map areas (bounding boxes)
   const share = (pts, boxes) => pts.length
@@ -1279,6 +1345,10 @@ async function findPlace(q){
   return {lat:+r.lat, lon:+r.lon, name:r.name || r.display_name.split(',')[0]};
 }
 async function nearestParking(p){
+  if (await hasData()) {
+    const list = mergeMeta(await loadTiles('meta', p, 2.5), 'pk', joinKey).map(it => ({lat:it[0] / QD, lon:it[1] / QD})).filter(x => km(x, p) < 2.5);
+    return list.sort((a, b) => km(a, p) - km(b, p))[0] || null;
+  }
   const d = await overpass(`[out:json][timeout:30];nwr["amenity"="parking"]["access"!~"^(private|no|customers)$"](around:2500,${p.lat.toFixed(5)},${p.lon.toFixed(5)});out center qt;`, 10000);
   const list = d.elements.map(e => ({lat:e.lat ?? e.center?.lat, lon:e.lon ?? e.center?.lon})).filter(x => x.lat);
   return list.sort((a, b) => km(a, p) - km(b, p))[0] || null;
@@ -1298,7 +1368,7 @@ const inArea = (pt, a) => a.closed ? a.rings.some(r => pip(pt, r))
 const fineCell = p => Math.round(p[0] / 0.0004) + ':' + Math.round(p[1] / 0.0006);   // ~45 m squares
 function dogInfo(pts, dog){
   const sample = pts.filter((_, i) => i % 3 === 0 || i === pts.length - 1);
-  const touches = a => a.point ? sample.some(p => km(P(p), P(a.point)) < 0.15) : sample.some(p => inArea(p, a));
+  const touches = a => a.point ? sample.some(p => km(P(p), P(a.point)) < (a.radius || 0.15)) : sample.some(p => inArea(p, a));
   return {
     offLeash: dog.off.some(touches),
     leash: dog.leash.some(touches),
@@ -1310,6 +1380,48 @@ function dogInfo(pts, dog){
 // Walkable ways (leaving out paths where dogs are banned), knooppunten, official walking routes and
 // dog-related places (off-leash zones, lead-only and no-dog areas, drinking water) around a start point
 async function loadArea(S, R){
+  return await hasData() ? loadAreaTiles(S, R) : loadAreaLive(S, R);
+}
+const WIDE_WAY = /^(track|bridleway|service|unclassified|pedestrian)$/;   // room for a group with dogs
+async function loadAreaTiles(S, R){
+  const [paths, meta, anb, ix] = await Promise.all([loadTiles('paths', S, R), loadTiles('meta', S, R), anbData(), dataIndex()]);
+  const coords = new Map(), G = new Map(), trail = new Set(), seen = new Set();
+  const link = (a, b, len, cost, eid, wide) => { if (!G.has(a)) G.set(a, []); G.get(a).push({to:b, len, cost, eid, wide}); };
+  // Ways from neighbouring tiles overlap; points with the same coordinates are the same junction
+  for (const t of paths) for (const w of t.w) {
+    const hw = ix.walk[w[0]], wt = PATH_WEIGHT[hw] || 2.5, wide = WIDE_WAY.test(hw);
+    let la = 0, lo = 0, prev = null;
+    for (let i = 1; i < w.length; i += 2) {
+      la += w[i]; lo += w[i + 1];
+      const id = la * 1e6 + lo;
+      if (!coords.has(id)) coords.set(id, [la / QD, lo / QD]);
+      if (prev !== null && prev !== id) {
+        const eid = prev < id ? prev + '-' + id : id + '-' + prev;
+        if (!seen.has(eid)) {
+          seen.add(eid);
+          const len = km(P(coords.get(prev)), P(coords.get(id)));
+          link(prev, id, len, len * wt, eid, wide); link(id, prev, len, len * wt, eid, wide);
+          if (wt <= 1.3) { trail.add(prev); trail.add(id); }
+        }
+      }
+      prev = id;
+    }
+  }
+  const areaOf = it => { const rings = it.r.map(r => decode(r)); return {rings, closed:true, name:it.n, bb:bbOf(rings.flat())}; };
+  const dog = {
+    off: [...mergeMeta(meta, 'off', dogKey).map(it => it.p ? {point:[it.p[0] / QD, it.p[1] / QD], name:it.n} : areaOf(it)),
+      // Official Natuur en Bos off-leash zones are points somewhere inside the zone, so allow some room
+      ...anb.zones.filter(z => km({lat:z[2], lon:z[3]}, S) < R + 1).map(z => ({point:[z[2], z[3]], name:z[0], radius:0.3}))],
+    leash: mergeMeta(meta, 'lead', dogKey).map(areaOf),
+    ban: mergeMeta(meta, 'ban', dogKey).map(areaOf),
+    banLines: mergeMeta(meta, 'banl', it => it.slice(0, 6).join()).map(f => decode(f)),
+    banCells: new Set(),
+    water: mergeMeta(meta, 'wa', joinKey).map(it => [it[0] / QD, it[1] / QD]),
+  };
+  dog.banLines.forEach(l => l.forEach(p => dog.banCells.add(fineCell(p))));
+  return {coords, G, trail, kps:kpsFrom(meta), segs:segsFrom(meta), routes:routesFrom(meta), dog};
+}
+async function loadAreaLive(S, R){
   const a = `(around:${Math.round(R * 1000)},${S.lat.toFixed(5)},${S.lon.toFixed(5)})`;
   // Route shapes are clipped to the search area, so long routes passing through stay small
   const sw = offset(S, R * 1.42, 225), ne = offset(S, R * 1.42, 45);
@@ -1490,10 +1602,13 @@ async function createLoop(){
   if (cr.mode === 'point' && !cr.point) return toast('Choose a start point on the map first.', true);
   cr.busy = true; $('#createBtn').disabled = true;
   try {
-    let origin, place = null, bearing = Math.random() * 360, spread = 180;
+    let origin, place = null, bearing = Math.random() * 360, spread = 180, outline = null;
     if (cr.mode === 'area') {
-      cStatus(`Finding ${q}…`);
-      const pl = await findPlace(q);
+      // Natuur en Bos areas come with their own position and outline; other names are looked up
+      const anbArea = q.startsWith('anb:') ? (await anbData()).areas[+q.slice(4)] : null;
+      cStatus(`Finding ${anbArea ? anbArea.n : q}…`);
+      const pl = anbArea ? {lat:anbArea.c[0], lon:anbArea.c[1], name:anbArea.n} : await findPlace(q);
+      outline = anbArea ? anbArea.r : null;
       place = pl.name;
       cStatus('Looking for a parking to start from…');
       const park = await nearestParking(pl).catch(() => null);
@@ -1506,7 +1621,7 @@ async function createLoop(){
     const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
     cStatus(`Building routes of about ${fmtKm(L)}…`);
     await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
-    cr.ctx = {area, origin, place, bearing, spread, L};
+    cr.ctx = {area, origin, place, bearing, spread, L, outline};
     cr.pool = gatherOptions(cr.ctx);
     cr.shown = [];
     cr.options = pickOptions(cr.ctx, cr.pool, cr.shown);
@@ -1541,6 +1656,8 @@ const LEGEND_CREATE = `<span><i class="lg-route"></i>1</span><span><i class="lg-
   '<span><i class="lg-off"></i>Off-leash zone</span><span><i class="lg-lead"></i>Lead only</span><span><i class="lg-ban"></i>No dogs</span><span><i class="lg-water"></i>Water</span>';
 function drawCreate(){
   const d = cr.ctx?.area.dog;
+  if (cr.ctx?.outline && cr.options.length)
+    L.polygon(cr.ctx.outline, {color:'#2d6a4f', weight:2, fillColor:'#2d6a4f', fillOpacity:.06, interactive:false}).addTo(walkLayer);
   if (d && cr.options.length) {
     // Dog-friendly layer: off-leash zones, lead-only and no-dog areas, paths closed to dogs, drinking water
     const shape = (a, style) => a.closed ? L.polygon(a.rings, style) : L.featureGroup(a.rings.map(r => L.polyline(r, style)));
@@ -1612,7 +1729,7 @@ function renderCreate(){
       </div>
       ${v.kind === 'trail' ? '<p class="note" style="margin:0">Not signposted. Follow it on your phone, or download the GPX for a walking app.</p>' : ''}
       ${v.kind === 'route' ? '<p class="note" style="margin:0">An official marked route: follow its signs. It starts here at the point closest to where you chose.</p>' : ''}
-      <p class="note" style="margin:0">With a big group of dogs, check the signs at the entrance: rules differ per area. In Flemish forests and nature reserves dogs usually stay on a lead outside off-leash zones.</p>
+      <p class="note" style="margin:0">In Natuur en Bos areas dogs stay on a lead and on the paths, except inside the marked off-leash zones. Elsewhere rules differ, so check the signs at the entrance.</p>
       <div class="actions">
         <button class="btn" id="cShow">Show on map</button>
         <a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=${v.start.lat},${v.start.lon}" target="_blank" rel="noopener">Directions to start</a>
@@ -1654,8 +1771,20 @@ async function addCreatedToCalendar(date){
     toast(`Added for ${prettyDate(date)}${old ? ', replacing the walk planned then' : ''}`);
   } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Add walk'; } }
 }
-$('#cArea').innerHTML = '<option value="">Choose a nature area…</option>' + DOMAINS.map(([g, list]) =>
-  `<optgroup label="${esc(g)}">${list.map(n => `<option>${esc(n)}</option>`).join('')}</optgroup>`).join('');
+// The pick list: all Natuur en Bos areas, nearest to the group first, plus a few others (e.g. in Wallonia).
+// Without the pre-built data it falls back to the short built-in list.
+async function fillAreaList(){
+  const anb = await anbData(), sel = $('#cArea'), keep = sel.value;
+  const from = fairCenter() || {lat:50.85, lon:4.45};
+  const areas = anb.areas.map((a, i) => ({a, i, d:km({lat:a.c[0], lon:a.c[1]}, from)})).sort((x, y) => x.d - y.d);
+  const group = ([g, list]) => `<optgroup label="${esc(g)}">${list.map(n => `<option>${esc(n)}</option>`).join('')}</optgroup>`;
+  sel.innerHTML = '<option value="">Choose a nature area…</option>' + (areas.length
+    ? `<optgroup label="Natuur en Bos areas, nearest first">${areas.map(x => `<option value="anb:${x.i}">${esc(x.a.n)} · ${Math.round(x.d)} km</option>`).join('')}</optgroup>`
+      + DOMAINS.filter(([g]) => g === 'Wallonia').map(group).join('')
+    : DOMAINS.map(group).join(''));
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+fillAreaList();
 $('#cArea').onchange = () => { $('#cSearch').value = ''; };
 $('#cSearch').onkeydown = e => { if (e.key === 'Enter') createLoop(); };
 document.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => { cr.mode = b.dataset.cmode; cr.current = null; cr.options = []; renderCreate(); setView('create'); });
@@ -1671,7 +1800,7 @@ map.on('click', e => {
 });
 
 // ---------- init ----------
-function renderAll(){ renderChip(); renderWalks(); renderGroup(); renderMe(); renderSettings(); renderCreate(); renderMap(); }
+function renderAll(){ renderChip(); renderWalks(); renderGroup(); renderMe(); renderSettings(); renderCreate(); renderMap(); fillAreaList(); }
 matchMedia('(max-width: 900px)').addEventListener('change', () => { if (view === 'map' && !isPhone()) setView('walks'); map.invalidateSize(); });
 renderAll();
 setView(state.members.length && !me() ? 'me' : 'walks');
