@@ -6,10 +6,30 @@ Pack Walks helps a small group of dog owners in Belgium pick a green walk every 
 
 | File | What it is |
 |---|---|
-| `pack-walks-local.html` | The app. Open it in a browser (Chrome, Edge or Firefox). |
+| `index.html` | The app. Open it in a browser (Chrome, Edge or Firefox). |
 | `pack-walks-group-belgium.json` | Eleven test members around Brussels (Kampenhout, Sterrebeek, Woluwe, Perk, Jette, Elsene, Tervuren, Overijse, Steenokkerzeel, Zaventem, Melsbroek). Not real people. |
 | `pack-walks-test-group.json` | Four older test members (Gent, Leuven, Mechelen, Hasselt). |
 | `README.md` | This documentation. |
+| `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png` | Let phones install the app on the home screen. |
+
+## Online with GitHub Pages
+
+GitHub Pages publishes `index.html` as a website, for example `https://yannickwils8-ship-it.github.io/pack-walks/`.
+
+1. On GitHub, open the repository → **Settings** → **Pages**.
+2. Under **Build and deployment**, choose **Deploy from a branch**, branch **main**, folder **/ (root)**, and save.
+3. After a minute or two the page shows the site's address.
+
+Pages for a **private** repository needs a paid GitHub plan (Pro, Team or Enterprise). On a free account the repository must be public. Either way, the published site itself can be opened by anyone who has the link, so never put real members' data files in the repository.
+
+## Install on your phone
+
+Open the site on your phone, then:
+
+- **iPhone (Safari):** tap Share → **Add to Home Screen**.
+- **Android (Chrome):** tap ⋮ → **Add to Home screen** or **Install app**.
+
+The app then opens full screen like a normal app. This works only from the online site, not from a file opened on the computer.
 
 ## Before you start
 
@@ -29,7 +49,7 @@ On a phone the navigation sits at the bottom, and the map has its own **Map** ta
 
 ## Quick start with the test group
 
-1. Double-click `pack-walks-local.html`.
+1. Double-click `index.html`.
 2. Go to **Settings → Import file** and pick `pack-walks-group-belgium.json`. This replaces everything saved in that browser.
 3. Still in Settings, press **Re-locate towns**. It looks up each town by name so the map shows the right places. It takes about a minute.
 4. Go to **Me** and tap a name under **Who are you?**

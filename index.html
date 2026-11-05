@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Pack Walks</title>
+<meta name="theme-color" content="#1f6b4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pack Walks">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
@@ -235,6 +243,14 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
   body.show-map .mapwrap{display:block;position:fixed;inset:0 0 calc(62px + env(safe-area-inset-bottom, 0px)) 0}
   .toast{bottom:calc(76px + env(safe-area-inset-bottom, 0px))}
   h1{font-size:24px}
+  /* 16px inputs stop iPhones zooming in when a field is tapped; larger targets for thumbs */
+  .field input,.field textarea,.field select{font-size:16px;padding:12px}
+  .btn{padding:11px 14px}
+  .btn.small{padding:8px 12px}
+  .seg span{padding:11px 6px}
+  .rsvp-btn{padding:14px 8px}
+  .mobile-head{position:sticky;top:0;z-index:20;background:var(--bg);margin:-16px calc(-1 * max(16px, env(safe-area-inset-right, 0px))) 16px calc(-1 * max(16px, env(safe-area-inset-left, 0px)));padding:calc(10px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));border-bottom:1px solid var(--line)}
+  .legend{bottom:12px;left:8px;right:8px;justify-content:center}
 }
 @media (max-width:420px){
   .actions,.data-actions,.grid2{grid-template-columns:1fr}
