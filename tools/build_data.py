@@ -26,9 +26,21 @@ import osmium
 TLAT, TLON = 0.1, 0.15   # tile size in degrees, about 11 x 10.5 km in Belgium
 Q = 100000
 
+# Walkable way types. New types are added at the end so older pages keep reading the numbers right.
 WALK = ['path', 'footway', 'track', 'bridleway', 'steps', 'cycleway', 'pedestrian',
-        'living_street', 'service', 'unclassified', 'residential']
+        'living_street', 'service', 'unclassified', 'residential',
+        'tertiary', 'secondary', 'primary', 'trunk']
 CLS = {h: i for i, h in enumerate(WALK)}
+SERVICE_EXCLUDED = {'parking_aisle', 'driveway', 'drive-through', 'emergency_access'}
+FOOT_OK = {'yes', 'designated', 'permissive'}
+PAVED = {'paved', 'asphalt', 'concrete', 'paving_stones', 'sett', 'cobblestone', 'metal', 'wood',
+         'chipseal', 'bricks'}
+UNPAVED = {'unpaved', 'compacted', 'fine_gravel', 'gravel', 'pebblestone', 'dirt', 'earth', 'ground',
+           'grass', 'mud', 'sand', 'woodchips', 'rock', 'forest_floor'}
+SIDEWALK_YES = {'both', 'left', 'right', 'yes', 'separate'}
+HARD_SAC = {'demanding_mountain_hiking', 'alpine_hiking', 'demanding_alpine_hiking', 'difficult_alpine_hiking'}
+# Flags stored per way (one number, add them up)
+F_PAVED, F_UNPAVED, F_SIDEWALK, F_DIFFICULT, F_LEASHED = 1, 2, 4, 8, 16
 GREEN = [('landuse', 'forest', 'f'), ('natural', 'wood', 'f'),
          ('landuse', 'meadow', 'g'), ('landuse', 'grass', 'g'), ('landuse', 'farmland', 'g'),
          ('landuse', 'orchard', 'g'), ('landuse', 'recreation_ground', 'g'),
@@ -63,6 +75,65 @@ def enc(coords):
         a, b = q(la), q(lo)
         out += [a - pla, b - plo]
         pla, plo = a, b
+    return out
+
+
+def walk_class(t):
+    """The walking type of a way, or None when it isn't walkable (or not for us)."""
+    hw = t.get('highway')
+    if not hw or t.get('area') == 'yes':
+        return None
+    if hw.endswith('_link'):
+        hw = hw[:-5]   # a slip road counts as the road it belongs to
+    if hw == 'road':
+        hw = 'unclassified'
+    if hw not in CLS:
+        return None
+    foot = t.get('foot')
+    if foot in NO_ACCESS:
+        return None
+    if t.get('access') in NO_ACCESS and foot not in FOOT_OK:
+        return None
+    if hw == 'service' and t.get('service') in SERVICE_EXCLUDED:
+        return None   # car park aisles, private drives
+    if hw == 'trunk' and foot not in FOOT_OK:
+        return None
+    return hw
+
+
+def way_flags(t, hw):
+    f = 0
+    s, tt = t.get('surface'), t.get('tracktype')
+    if s in PAVED or (hw == 'track' and tt == 'grade1'):
+        f |= F_PAVED
+    elif s in UNPAVED or (hw == 'track' and tt in ('grade2', 'grade3', 'grade4', 'grade5')):
+        f |= F_UNPAVED
+    if any(t.get(k) in SIDEWALK_YES for k in ('sidewalk', 'sidewalk:both', 'sidewalk:left', 'sidewalk:right')):
+        f |= F_SIDEWALK
+    if t.get('sac_scale') in HARD_SAC:
+        f |= F_DIFFICULT
+    if t.get('dog') == 'leashed':
+        f |= F_LEASHED
+    return f
+
+
+def densify(coords, step_km):
+    """Points along a line at most step_km apart."""
+    out = [coords[0]]
+    for a, b in zip(coords, coords[1:]):
+        n = max(1, math.ceil(length_km([a, b]) / step_km))
+        out += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
+    return out
+
+
+def thin(ring, step_km):
+    """Keeps points at least step_km apart, to keep big outlines small."""
+    out = [ring[0]]
+    for p in ring[1:]:
+        if length_km([out[-1], p]) >= step_km:
+            out.append(p)
+    if out[-1] != ring[-1]:
+        out.append(ring[-1])
     return out
 
 
@@ -109,6 +180,14 @@ class MainPass(osmium.SimpleHandler):
     def add(self, kind, la, lo, item):
         self.meta[tile(la, lo)][kind].append(item)
 
+    def add_water(self, coords):
+        """Water for the dogs: points every 25 m along streams, rivers and shores, grouped per tile."""
+        by_tile = defaultdict(list)
+        for p in densify(coords, 0.025):
+            by_tile[tile(*p)].append(p)
+        for tl, pts in by_tile.items():
+            self.meta[tl]['wt'].append(enc(pts))
+
     def node(self, n):
         t = n.tags
         if len(t) == 0:
@@ -118,8 +197,10 @@ class MainPass(osmium.SimpleHandler):
             self.add('k', la, lo, [t['rwn_ref'], q(la), q(lo)])
         if t.get('place') in ('village', 'town', 'city', 'hamlet'):
             self.add('pl', la, lo, [q(la), q(lo), t['place'][0]])   # c, t, v or h
-        if t.get('amenity') == 'drinking_water':
+        if t.get('amenity') == 'drinking_water' or (t.get('man_made') == 'water_tap' and t.get('drinking_water') == 'yes'):
             self.add('wa', la, lo, [q(la), q(lo)])
+        if t.get('amenity') == 'toilets' and t.get('access') not in ('private', 'no', 'customers'):
+            self.add('wc', la, lo, [q(la), q(lo)])
         if t.get('amenity') == 'parking' and t.get('access') not in ('private', 'no', 'customers'):
             self.add('pk', la, lo, [q(la), q(lo)])
         if t.get('leisure') == 'dog_park':
@@ -135,20 +216,23 @@ class MainPass(osmium.SimpleHandler):
         if w.id in self.need:
             self.geo[w.id] = coords
         t = w.tags
-        hw = t.get('highway')
-        if hw in CLS and t.get('area') != 'yes' and t.get('access') not in NO_ACCESS and t.get('foot') not in NO_ACCESS:
+        hw = walk_class(t)
+        if hw:
             if t.get('dog') == 'no':
                 line = enc(coords)
                 for tl in tiles_of(coords):
                     self.meta[tl]['banl'].append(line)
             else:
-                item = [CLS[hw]] + enc(coords)
+                item = [CLS[hw], way_flags(t, hw)] + enc(coords)
                 for tl in tiles_of(coords):
                     self.paths[tl].append(item)
-        if t.get('amenity') == 'parking' and t.get('access') not in ('private', 'no', 'customers'):
-            la = sum(c[0] for c in coords) / len(coords)
-            lo = sum(c[1] for c in coords) / len(coords)
-            self.add('pk', la, lo, [q(la), q(lo)])
+        if t.get('waterway') in ('stream', 'river'):
+            self.add_water(coords)
+        for kind, ok in (('pk', t.get('amenity') == 'parking'), ('wc', t.get('amenity') == 'toilets')):
+            if ok and t.get('access') not in ('private', 'no', 'customers'):
+                la = sum(c[0] for c in coords) / len(coords)
+                lo = sum(c[1] for c in coords) / len(coords)
+                self.add(kind, la, lo, [q(la), q(lo)])
 
     def area(self, a):
         t = a.tags
@@ -158,12 +242,21 @@ class MainPass(osmium.SimpleHandler):
         dog = t.get('dog')
         dogk = ('off' if t.get('leisure') == 'dog_park' or dog == 'unleashed'
                 else 'lead' if dog == 'leashed' else 'ban' if dog == 'no' else None)
-        if not kind and not dogk:
+        # In nature reserves dogs stay on a lead unless the reserve says otherwise
+        if not dogk and t.get('leisure') == 'nature_reserve' and dog not in ('yes', 'unleashed'):
+            dogk = 'lead'
+        water = t.get('natural') == 'water'
+        if not kind and not dogk and not water:
             return
         try:
             rings = [[(n.lat, n.lon) for n in outer] for outer in a.outer_rings()]
         except osmium.InvalidLocationError:
             return
+        if water:
+            for r in rings:
+                self.add_water(r)
+            if not kind and not dogk:
+                return
         pts = [p for r in rings for p in r]
         if not pts:
             return
@@ -175,7 +268,7 @@ class MainPass(osmium.SimpleHandler):
             for tl in cover:
                 self.meta[tl]['gr'].append(item)
         if dogk:
-            item = {'n': t.get('name', ''), 'r': [enc(r) for r in rings]}
+            item = {'n': t.get('name', ''), 'r': [enc(thin(r, 0.03)) for r in rings]}
             for tl in cover:
                 self.meta[tl][dogk].append(item)
 
@@ -268,6 +361,7 @@ def main():
 
     write(f'{out}/index.json', {
         'built': time.strftime('%Y-%m-%d', time.gmtime()),
+        'v': 2,   # paths: [type, flags, shape...]; flags 1 paved, 2 unpaved, 4 sidewalk, 8 difficult, 16 lead
         'tile': [TLAT, TLON], 'q': Q, 'walk': WALK,
         'paths': sorted(m.paths), 'meta': sorted(m.meta),
     })
