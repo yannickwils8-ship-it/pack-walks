@@ -22,6 +22,7 @@ To be fast and reliable, the app doesn't ask public map servers for paths every 
 - marked walking routes,
 - dog places (off-leash zones, lead-only and no-dog areas, drinking water),
 - parkings, villages, and green or built-up areas.
+- a walking-quality map: for each square of about 1 km, how much is path, small street and road, how much is unpaved, and whether there is water, knooppunten and a public parking (used for fair start places).
 
 It also includes from **Agentschap Natuur en Bos**:
 
@@ -121,6 +122,7 @@ Make a loop yourself, for any day.
 2. Choose where:
    - **Nature area:** pick one of the 300+ Natuur en Bos areas, listed nearest to the group first with their distance, or a Walloon area at the bottom. You can also type the name of any other area. The chosen area's outline is shown on the map.
    - **Point on map:** click the map where the walk should start. On a phone, tap **Choose on map** and then tap the map.
+   - **Fair for all:** let the app propose start places for the group (see below).
 3. Set the **distance** with the slider (3–15 km).
 4. Press **Create loop**. This takes from a few seconds to about a minute, depending on how busy the public map servers are.
 
@@ -142,9 +144,21 @@ Each option shows its length and walking time, and whether it **matches your dis
 
 Select an option to see it on the map, get directions, download the GPX, share it on WhatsApp, or **Add walk** to the group calendar on a date. A walk added by hand replaces any walk already planned that day, and **Plan walks** leaves it in place. If the forecast for that day shows gusts above the cancel limit, the app won't add it.
 
+### Fair start places
+
+The **Fair for all** tab proposes up to **five start places** (A–E): public parkings in good walking areas where everyone has a reasonable drive.
+
+- **Longest drive for anyone:** 30, 45 (standard) or 60 minutes. Places where someone would drive longer are left out.
+- **Prefer:** **Short drive**, **Balanced** (standard) or **Best nature**: how much a better walking area may cost in driving.
+- **Fair, not just on average:** places are ranked on the average drive plus half the longest drive, so one long drive counts more than several short ones. The driving times are real (OSRM), with everyone's time shown per home town.
+- **Good walking area:** the share of paths and tracks around the start, unpaved ground, streams or ponds for the dogs and knooppunten count; big roads count against it. Places are at least 3 km apart.
+- Members who tick **Doesn't mind driving far** (in their details) still see their driving time, but it doesn't count in the choice.
+
+The first place's loops are made straight away (if no loop of about your distance exists there, the next place is tried). **Tap any place** at any time to see its loops; **Show 3 more** gives other loops from the same place. The individual 15/20/25 km limits are still used by **Plan walks**; here the driving-time limit counts.
+
 ## Group
 
-- **Add member** opens a form: name, town, dog's name, size, lead, notes, longest drive (15/20/25 km) and longest walk (5–8 km).
+- **Add member** opens a form: name, town, dog's name, size, lead, notes, longest drive (15/20/25 km), longest walk (5–8 km), and **Doesn't mind driving far** (left out of the fairness for start places, see Create).
 - Each member card has **Show on map** and **Remove**. Remove asks for a second tap, so nobody is deleted by accident.
 
 ## Me

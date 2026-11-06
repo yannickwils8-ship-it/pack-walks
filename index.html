@@ -136,6 +136,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .mixlegend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin-top:6px}
 .mixlegend span{display:flex;align-items:center;gap:5px}
 .mixlegend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.place-pin span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#2d6a4f;color:#fff;border:2px solid #fff;font:700 13px var(--display);box-shadow:0 1px 5px rgba(0,0,0,.4)}
+.place-pin.sel span{background:#d9480f}
+.times{font-size:12.5px;color:var(--ink)}
+.times .far{color:var(--muted);font-style:italic}
 .wc-pin span{display:block;padding:1px 4px;border-radius:4px;background:#495057;color:#fff;font:700 10px var(--body);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .lg-dogwater{width:10px;height:10px;border-radius:50%;background:#0b7285;border:2px solid #fff;box-shadow:0 0 0 1px #0b7285}
 .junctions .arrow{color:var(--muted);font-size:13px}
@@ -218,7 +222,7 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
 .fine{font-size:12px;color:var(--muted)}
 
 /* ---------- create a walk ---------- */
-.tabs2{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--surface-2);padding:4px;border-radius:12px}
+.tabs2{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;background:var(--surface-2);padding:4px;border-radius:12px}
 .tabs2 button{padding:9px;border:0;border-radius:9px;background:none;font-weight:700;color:var(--muted);cursor:pointer}
 .tabs2 button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .range{display:flex;flex-direction:column;gap:6px}
@@ -341,6 +345,18 @@ details.past summary{cursor:pointer;color:var(--muted);font-weight:600;margin-bo
         <div class="tabs2" role="tablist" aria-label="Where to start">
           <button data-cmode="area" class="on" role="tab">Nature area</button>
           <button data-cmode="point" role="tab">Point on map</button>
+          <button data-cmode="group" role="tab">Fair for all</button>
+        </div>
+        <div id="cmGroup" class="form" hidden>
+          <p class="pick-hint" id="groupHint"></p>
+          <div class="field"><span class="flabel">Longest drive for anyone</span><div class="seg" role="radiogroup" id="cCap">
+            <label><input type="radio" name="cCap" value="30"><span>30 min</span></label>
+            <label><input type="radio" name="cCap" value="45"><span>45 min</span></label>
+            <label><input type="radio" name="cCap" value="60"><span>60 min</span></label></div></div>
+          <div class="field"><span class="flabel">Prefer</span><div class="seg" role="radiogroup" id="cPref">
+            <label><input type="radio" name="cPref" value="drive"><span>Short drive</span></label>
+            <label><input type="radio" name="cPref" value="balanced"><span>Balanced</span></label>
+            <label><input type="radio" name="cPref" value="nature"><span>Best nature</span></label></div></div>
         </div>
         <div id="cmArea" class="form">
           <div class="field"><label for="cArea">Nature area</label><select id="cArea"></select></div>
@@ -428,7 +444,7 @@ const ROUTE = '#d9480f';
 const LS = 'pack-walks-local.v2';
 function defaults(){
   return {me:null, members:[], walks:[], rsvp:{},
-    settings:{gustCaution:45, gustCancel:60, startDate:'', count:6, time:'10:00', createKm:6}};
+    settings:{gustCaution:45, gustCancel:60, startDate:'', count:6, time:'10:00', createKm:6, maxDriveMin:45, placePref:'balanced'}};
 }
 function load(){
   try {
@@ -1242,6 +1258,8 @@ function memberForm(fid, m, submitLabel){
     <fieldset><legend>Limits</legend>
       <div class="field"><span class="flabel">Longest drive to a walk</span>${seg('drive', [[15,'15 km'],[20,'20 km'],[25,'25 km']], m?.maxDrive || 20)}</div>
       <div class="field"><span class="flabel">Longest walk</span>${seg('len', [[5,'5 km'],[6,'6 km'],[7,'7 km'],[8,'8 km']], m?.maxLen ?? 7)}</div>
+      <label class="switch"><input type="checkbox" id="${fid}-far" ${m?.farOk ? 'checked' : ''}><span class="track"></span>Doesn't mind driving far</label>
+      <small class="muted">Start places for the group are then chosen fairly for the others; your drive is still shown.</small>
     </fieldset>
     <button class="btn primary block" type="submit">${submitLabel}</button>
   </form>`;
@@ -1251,7 +1269,7 @@ function readForm(f){
   const r = n => f.querySelector(`input[name="${f.id}-${n}"]:checked`)?.value;
   return {name:v('name').value.trim(), town:v('town').value.trim(),
     dog:{name:v('dog').value.trim(), size:r('size') || 'M', lead:v('lead').checked, notes:v('notes').value.trim()},
-    maxDrive:+(r('drive') || 20), maxLen:+(r('len') || 7)};
+    maxDrive:+(r('drive') || 20), maxLen:+(r('len') || 7), farOk:v('far').checked};
 }
 document.addEventListener('submit', async e => {
   const f = e.target.closest('form.form'); if (!f) return;
@@ -2018,12 +2036,12 @@ let SIGNPOSTED_SLOT = true;   // with a group of dogs, a signposted route you ca
 const cStatus = t => { const el = $('#createStatus'); el.hidden = !t; el.textContent = t || ''; };
 async function createLoop(){
   if (cr.busy) return;
-  const L = cr.km;
   const q = $('#cSearch').value.trim() || $('#cArea').value;
   if (cr.mode === 'area' && !q) return toast('Choose a nature area first.', true);
   if (cr.mode === 'point' && !cr.point) return toast('Choose a start point on the map first.', true);
   cr.busy = true; $('#createBtn').disabled = true;
   try {
+    if (cr.mode === 'group') return await findPlaces();
     let origin, place = null, bearing = rand() * 360, spread = 180, outline = null;
     if (cr.mode === 'area') {
       // Natuur en Bos areas come with their own position and outline; other names are looked up
@@ -2038,24 +2056,181 @@ async function createLoop(){
       // From a parking at the edge, head into the area
       if (park && km(park, pl) > 0.3) { bearing = bearingTo(park, pl); spread = 60; }
     } else { origin = cr.point; place = cr.pointName || null; }
-    const r0 = L / (2 * Math.PI * 1.25);
-    cStatus('Loading paths, tracks and knooppunten around the start…');
-    const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
-    cStatus(`Building routes of about ${fmtKm(L)}…`);
-    await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
-    cr.ctx = {area, origin, place, bearing, spread, L, outline};
-    cr.pool = await gatherOptions(cr.ctx);
-    cr.shown = [];
-    cr.options = pickOptions(cr.ctx, cr.pool, cr.shown);
-    if (!cr.options.length) throw new Error('No walkable loop found here. Try another start point.');
-    cr.shown.push(...cr.options); cr.sel = 0; cr.current = cr.options[0];
-    renderCreate(); renderMap(); fitCreate();
+    await buildLoops(origin, place, bearing, spread, outline);
     $('#createResult').scrollIntoView({behavior:'smooth', block:'start'});
   } catch(err) {
     toast(err.message || 'Something went wrong. Try again in a minute.', true);
   } finally {
     cr.busy = false; $('#createBtn').disabled = false; cStatus('');
   }
+}
+// Loops of about the chosen distance from origin (the method's generator plus signposted options)
+async function buildLoops(origin, place, bearing, spread, outline){
+  const L = cr.km, r0 = L / (2 * Math.PI * 1.25);
+  cStatus('Loading paths, tracks and knooppunten around the start…');
+  const area = await loadArea(origin, Math.min(6, 2.6 * r0 + 0.8));
+  cStatus(`Building routes of about ${fmtKm(L)}…`);
+  await new Promise(r => setTimeout(r, 30));   // let the status show before the heavy part
+  cr.ctx = {area, origin, place, bearing, spread, L, outline};
+  cr.pool = await gatherOptions(cr.ctx);
+  cr.shown = [];
+  cr.options = pickOptions(cr.ctx, cr.pool, cr.shown);
+  cStatus('');
+  if (!cr.options.length) {
+    if (cr.mode === 'group') return;   // the place says so; the next one can be tried
+    throw new Error('No walkable loop found here. Try another start point.');
+  }
+  cr.shown.push(...cr.options); cr.sel = 0; cr.current = cr.options[0];
+  renderCreate(); renderMap(); fitCreate();
+}
+// Another place of the list, at any time (also while its loops are shown)
+async function pickPlace(i){
+  if (cr.busy) return;
+  cr.busy = true; $('#createBtn').disabled = true;
+  try { await choosePlace(i); }
+  catch(err) { toast(err.message || 'Something went wrong. Try again in a minute.', true); }
+  finally { cr.busy = false; $('#createBtn').disabled = false; cStatus(''); }
+}
+// ---------- fair start places for the group ----------
+// The weekly data build sums, per square of ~1.1 × 1.05 km: metres of path, small street and road,
+// metres unpaved, water points for the dogs, knooppunten and one public parking (walk_grid.py).
+let walkGridP = null;
+function walkGrid(){
+  if (!walkGridP) walkGridP = dataIndex().then(() => fetch(DATA + 'walkgrid.json')).then(r => r.ok ? r.json() : null).catch(() => null)
+    .then(g => {
+      if (!g) { walkGridP = null; return null; }
+      const cells = new Map();
+      for (const c of g.c) cells.set(c[0] * 100000 + c[1], c);
+      return {g:g.g, cells, rows:g.c};
+    });
+  return walkGridP;
+}
+// How good the walking is within reach of a loop of D km from p (0 = town streets, 1 = forest paths
+// with water), from the squares whose middle lies within D/4 km (1.2 to 3 km). Also where the paths
+// are, so the loop can head that way.
+function areaQuality(W, p, D){
+  const [gl, gn] = W.g, r = Math.min(3, Math.max(1.2, D / 4)), cos = Math.cos(p.lat * Math.PI / 180);
+  const ni = Math.ceil(r / 111.32 / gl), nj = Math.ceil(r / (111.32 * cos) / gn);
+  const i0 = Math.floor(p.lat / gl), j0 = Math.floor(p.lon / gn);
+  let path = 0, street = 0, road = 0, unp = 0, wet = 0, kp = 0, n = 0, cla = 0, clo = 0;
+  for (let i = i0 - ni; i <= i0 + ni; i++) for (let j = j0 - nj; j <= j0 + nj; j++) {
+    const mid = {lat:(i + 0.5) * gl, lon:(j + 0.5) * gn};
+    if (km(mid, p) > r) continue;
+    n++;
+    const c = W.cells.get(i * 100000 + j); if (!c) continue;
+    path += c[2]; street += c[3]; road += c[4]; unp += c[5]; kp += c[7];
+    if (c[6] > 0) wet++;
+    cla += c[2] * mid.lat; clo += c[2] * mid.lon;
+  }
+  const total = path + street + road;
+  if (!total) return null;
+  const pathS = path / total, roadS = road / total, unpS = unp / total, waterS = n ? wet / n : 0;
+  // Unpaved ground says most (footways in housing estates count as paths too); a very dense network
+  // (over ~12 km of ways per km², as in towns) counts against; streams are almost everywhere in Flanders
+  const density = total / 100 / (Math.PI * r * r);
+  const q = Math.max(0, Math.min(1, 0.3 * pathS + 0.5 * unpS + 0.05 * Math.min(1, waterS * 2) + 0.1 * Math.min(1, kp / 4)
+    - 0.8 * roadS - 0.3 * Math.min(1, Math.max(0, (density - 12) / 12))));
+  return {q, pathS, roadS, unpS, waterS, kp, density, km:total / 100, toward:path ? {lat:cla / path, lon:clo / path} : null};
+}
+// Driving time (minutes) and distance (km) from each member to each start, via OSRM. Null if unavailable.
+async function drivingTimes(members, starts){
+  const pts = [...members, ...starts].map(p => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
+  const src = members.map((_, i) => i).join(';'), dst = starts.map((_, j) => members.length + j).join(';');
+  try {
+    const j = await (await fetch(`https://router.project-osrm.org/table/v1/driving/${pts}?sources=${src}&destinations=${dst}&annotations=duration,distance`)).json();
+    if (j.code !== 'Ok') return null;
+    return j.durations.map((row, i) => row.map((s, k) => s == null ? null : {min:s / 60, km:j.distances[i][k] / 1000}));
+  } catch(e) { return null; }
+}
+const estDrive = (a, b) => { const d = km(a, b) * 1.35; return {min:3 + d, km:d}; };   // ~60 km/h on the road distance
+const PLACE_PREF = {drive:15, balanced:30, nature:60};   // minutes of ride score that a perfect area is worth
+// Ride score: average drive plus half the longest, so one long drive weighs more than several short ones
+const rideScore = ts => ts.reduce((a, b) => a + b, 0) / ts.length + 0.5 * Math.max(...ts);
+const fairMembers = () => { const ms = state.members.filter(m => !m.farOk); return ms.length ? ms : state.members; };
+async function findStartPlaces(D){
+  const ms = state.members, fair = fairMembers(), cap = state.settings.maxDriveMin || 45;
+  if (!ms.length) throw new Error('Add the group\'s members first (Group tab), so the drives can be compared.');
+  const W = await walkGrid();
+  if (!W) throw new Error('Start places need this week\'s map data, which isn\'t ready yet. Try again later.');
+  const weight = PLACE_PREF[state.settings.placePref] ?? PLACE_PREF.balanced;
+  // 1. Every square with a public parking that everyone (who counts) can reach within about the limit
+  const pre = [];
+  for (const c of W.rows) {
+    if (!c[8]) continue;
+    const park = {lat:c[8] / QD, lon:c[9] / QD};
+    const ts = fair.map(m => estDrive(m, park).min);
+    if (Math.max(...ts) > cap * 1.15) continue;
+    const a = areaQuality(W, park, D);
+    if (!a || a.q < 0.25 || a.km < 2 * D) continue;   // a good walking area with enough ways for the loop
+    pre.push({park, area:a, est:rideScore(ts), score:rideScore(ts) - weight * a.q});
+  }
+  if (!pre.length) throw new Error(`No good walking area within ${cap} minutes for everyone. Allow longer drives, or tick "Doesn't mind driving far" for whoever lives far away.`);
+  // 2. The best dozen, at least 3 km apart, get real driving times
+  const spaced = (list, n) => { const out = []; for (const x of list) { if (out.length >= n) break; if (out.every(o => km(o.park, x.park) >= 3)) out.push(x); } return out; };
+  const top = spaced(pre.sort((a, b) => a.score - b.score), 12);
+  const rows = await drivingTimes(ms, top.map(x => x.park));
+  const fairIx = fair.map(m => ms.indexOf(m));
+  const places = [];
+  top.forEach((x, k) => {
+    const drives = ms.map((m, i) => rows && rows[i][k] ? rows[i][k] : estDrive(m, x.park));
+    const ts = fairIx.map(i => drives[i].min);
+    if (Math.max(...ts) > cap) return;
+    places.push({...x, drives, longest:Math.max(...ts), ride:rideScore(ts), score:rideScore(ts) - weight * x.area.q, estimated:!rows});
+  });
+  if (!places.length) throw new Error(`No good walking area within ${cap} minutes for everyone. Allow longer drives, or tick "Doesn't mind driving far" for whoever lives far away.`);
+  const out = places.sort((a, b) => a.score - b.score).slice(0, 5);
+  // Names: the Natuur en Bos area it lies in or next to, else the nearest village or town
+  const anb = await anbData();
+  for (const p of out) {
+    const inside = anb.areas.filter(a => p.park.lat >= a.b[0] - 0.01 && p.park.lat <= a.b[2] + 0.01 && p.park.lon >= a.b[1] - 0.015 && p.park.lon <= a.b[3] + 0.015)
+      .map(a => ({a, d:Math.min(...a.r.flatMap(r => r.filter((_, i) => i % 3 === 0)).map(q => km(P(q), p.park)))}))
+      .filter(x => x.d < 0.8).sort((x, y) => x.d - y.d)[0];
+    p.name = inside ? inside.a.n : null;
+  }
+  return out;
+}
+const townCache = new Map();
+async function townOf(p){
+  const key = p.lat.toFixed(3) + ',' + p.lon.toFixed(3);
+  if (!townCache.has(key)) {
+    try {
+      const j = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${p.lat.toFixed(4)}&lon=${p.lon.toFixed(4)}`)).json();
+      const a = j.address || {};
+      townCache.set(key, a.village || a.town || a.city || a.municipality || null);
+    } catch(e) { townCache.set(key, null); }
+  }
+  return townCache.get(key);
+}
+// Looks the places' towns up one per second (Nominatim's limit) and shows each as it arrives
+async function nameTowns(places){
+  for (const p of places) {
+    if (p.town !== undefined) continue;
+    p.town = await townOf(p.park);
+    if (cr.places === places) renderCreate();
+    await new Promise(r => setTimeout(r, 1100));
+  }
+}
+async function findPlaces(){
+  cStatus('Comparing walking areas and everyone\'s drive…');
+  cr.places = await findStartPlaces(cr.km); cr.placeKm = cr.km;
+  cr.placeSel = -1; cr.options = []; cr.current = null;
+  renderCreate(); renderMap();
+  map.fitBounds(L.latLngBounds([...cr.places.map(p => [p.park.lat, p.park.lon]), ...fairMembers().map(m => [m.lat, m.lon])]).pad(0.1));
+  nameTowns(cr.places);
+  // The first place with a good loop of about the distance (a place where none is found says so, and the next is tried)
+  for (let i = 0; i < Math.min(3, cr.places.length); i++) {
+    await choosePlace(i, true);
+    if (!cr.places[i].noLoop) break;
+  }
+}
+async function choosePlace(i, auto){
+  const p = cr.places[i];
+  cr.placeSel = i; cr.options = []; cr.current = null; renderCreate();
+  const t = p.area.toward, toward = t && km(t, p.park) > 0.3;
+  await buildLoops(p.park, p.name || p.town || null, toward ? bearingTo(p.park, t) : rand() * 360, toward ? 90 : 180, null);
+  p.noLoop = !cr.options.some(o => Math.abs(o.diff) <= 0.1);
+  if (p.noLoop && auto) toast(`No loop of about ${fmtKm(cr.km)} from place ${'ABCDE'[i]}, trying the next one`);
+  renderCreate();
 }
 // The next three not shown yet; when those run out, 36 new attempts with the directions turned by 15°
 async function moreOptions(){
@@ -2093,6 +2268,15 @@ function drawCreate(){
     d.ban.forEach(a => shape(a, {color:'#e03131', weight:1.5, fillColor:'#e03131', fillOpacity:.22}).bindTooltip('No dogs allowed').addTo(walkLayer));
     d.banLines.forEach(l => L.polyline(l, {color:'#e03131', weight:3, dashArray:'2 6'}).bindTooltip('No dogs on this path').addTo(walkLayer));
     d.water.forEach(w => L.circleMarker(w, {radius:5, color:'#ffffff', weight:2, fillColor:'#1c7ed6', fillOpacity:1}).bindTooltip('Drinking water').addTo(walkLayer));
+  }
+  if (cr.mode === 'group' && cr.places?.length) {
+    // The proposed start places (click one to choose it) and the drives to the chosen one
+    const sp = cr.places[cr.placeSel];
+    if (sp) state.members.forEach(m => L.polyline([[m.lat, m.lon], [sp.park.lat, sp.park.lon]],
+      {color:'#1f6b4a', weight:1.5, opacity:.6, dashArray:'4 6', interactive:false}).addTo(walkLayer));
+    cr.places.forEach((p, i) => L.marker([p.park.lat, p.park.lon], {zIndexOffset:900, icon:L.divIcon({className:'place-pin' + (i === cr.placeSel ? ' sel' : ''),
+      html:`<span>${PLACE_LETTERS[i]}</span>`, iconSize:[28,28], iconAnchor:[14,14]})})
+      .bindTooltip(`${PLACE_LETTERS[i]}: ${esc(p.name || p.town || 'Start place')} · longest drive ${Math.round(p.longest)} min`).on('click', () => pickPlace(i)).addTo(walkLayer));
   }
   if (cr.mode === 'point' && cr.point && !cr.current)
     L.marker([cr.point.lat, cr.point.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start here</span>', iconSize:[80,24], iconAnchor:[40,30]})}).addTo(walkLayer);
@@ -2178,8 +2362,20 @@ function renderCreate(){
     ? `Start: <b>${cr.pointName ? esc(cr.pointName) : cr.point.lat.toFixed(4) + ', ' + cr.point.lon.toFixed(4)}</b>. ${isPhone() ? 'Tap “Choose on map”' : 'Click the map'} to move it.`
     : isPhone() ? 'Tap “Choose on map”, then tap where the walk should start.' : 'Click the map where the walk should start.';
   $('#cKm').value = cr.km; $('#cKmOut').textContent = fmtKm(cr.km);
+  $('#cmGroup').hidden = cr.mode !== 'group';
+  $('#createBtn').textContent = cr.mode === 'group' ? 'Find start places' : 'Create loop';
+  if (cr.mode === 'group') {
+    const fair = fairMembers(), far = state.members.filter(m => !fair.includes(m));
+    $('#groupHint').innerHTML = !state.members.length ? 'Add the group\'s members first (Group tab).'
+      : `Start places in good walking areas, with a fair drive for <b>${fair.map(m => esc(m.name)).join(', ')}</b>.`
+        + (far.length ? ` ${far.map(m => esc(m.name)).join(', ')} ${far.length > 1 ? 'don\'t' : 'doesn\'t'} mind driving far: shown, not counted.` : '');
+    document.querySelectorAll('#cCap input').forEach(x => x.checked = +x.value === (state.settings.maxDriveMin || 45));
+    document.querySelectorAll('#cPref input').forEach(x => x.checked = x.value === (state.settings.placePref || 'balanced'));
+  }
   const v = cr.current, box = $('#createResult');
-  if (!v || !cr.options.length) { box.innerHTML = ''; return; }
+  const places = cr.mode === 'group' && cr.places?.length ? placesHTML() : '';
+  const bindPlaces = () => box.querySelectorAll('[data-place]').forEach(b => b.onclick = () => pickPlace(+b.dataset.place));
+  if (!v || !cr.options.length) { box.innerHTML = places ? `<div class="view">${places}</div>` : ''; bindPlaces(); return; }
   const L0 = cr.ctx.L, j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
   const next = upcoming()[0]?.date || state.settings.startDate || nextSunday();
   const close = o => Math.abs(o.diff) <= 0.12;
@@ -2192,6 +2388,7 @@ function renderCreate(){
     o.dog.water ? `<span class="chip">💧 ${o.dog.water} water point${o.dog.water > 1 ? 's' : ''}</span>` : '',
     (o.wide || 0) >= 0.5 ? '<span class="chip good">Wide tracks, easy with a group</span>' : ''].join('');
   box.innerHTML = `<div class="view">
+    ${places}
     ${cr.ctx.knp?.nearby && !cr.ctx.knp.fitting ? `<div class="notice">No signposted knooppunten loop of about ${fmtKm(L0)} starts near here, so these are trail loops along paths and tracks.</div>` : ''}
     ${cr.options.some(close) ? '' : `<div class="notice">There's no loop of exactly ${fmtKm(L0)} here. These are the closest options.</div>`}
     <div>
@@ -2225,10 +2422,38 @@ function renderCreate(){
       </div>
     </div></article></div>`;
   box.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => selectOption(+b.dataset.opt));
+  bindPlaces();
   $('#cMore').onclick = moreOptions;
   $('#cShow').onclick = () => { if (isPhone()) setView('map'); fitCreate(true); };
   $('#cGpx').onclick = () => download(`pack-walk-${+v.len.toFixed(1)}km.gpx`, gpx(createdTitle(v), v.pts), 'application/gpx+xml');
   $('#cAdd').onclick = () => addCreatedToCalendar($('#cDate').value);
+}
+const PLACE_LETTERS = 'ABCDE', PLACE_COLOR = '#2d6a4f';
+// Drives per home town (people from the same town drive about the same), nearest first
+function driveGroups(p){
+  const by = new Map();
+  state.members.forEach((m, k) => {
+    const town = String(m.town).replace(/^\d{4}\s*/, ''), key = town.toLowerCase() + (m.farOk ? ':far' : '');
+    if (!by.has(key)) by.set(key, {town, far:!!m.farOk, n:0, names:[], min:Math.round(p.drives[k].min), km:Math.round(p.drives[k].km)});
+    const g = by.get(key); g.n++; g.names.push(m.name);
+  });
+  return [...by.values()].map(g => ({...g, names:g.names.join(', ')})).sort((a, b) => a.far - b.far || a.min - b.min);
+}
+// The proposed start places: everyone's drive, the longest for those who count, and what the area is like
+function placesHTML(){
+  const ms = state.members, D = cr.placeKm;
+  return `<div><div class="section-label">${cr.places.length} start place${cr.places.length > 1 ? 's' : ''} for the group · loops of ${fmtKm(D)}</div>
+    <div class="opts">${cr.places.map((p, i) => `<button class="opt ${i === cr.placeSel ? 'sel' : ''}" data-place="${i}" aria-pressed="${i === cr.placeSel}">
+      <span class="opt-num" style="background:${PLACE_COLOR}">${PLACE_LETTERS[i]}</span>
+      <span class="opt-main"><b>${esc(p.name || p.town || 'Start place ' + PLACE_LETTERS[i])}</b>
+        <span class="opt-sub">${[p.name && p.town ? esc(p.town) : '', `around: ${Math.round(p.area.pathS * 100)}% paths and tracks`,
+          `${Math.round(p.area.unpS * 100)}% unpaved`, p.area.kp ? `${p.area.kp} knooppunten` : ''].filter(Boolean).join(' · ')}</span>
+        <span class="times">${driveGroups(p).map(g => `<span class="${g.far ? 'far' : ''}" title="${esc(g.names)} · ${g.km} km">${esc(g.town)}${g.n > 1 ? ' ×' + g.n : ''} ${g.min} min</span>`).join(' · ')}</span>
+        <span class="chips"><span class="chip ${p.longest <= 30 ? 'good' : ''}">Longest drive ${Math.round(p.longest)} min</span>${
+          p.noLoop ? `<span class="chip warn">No loop of ${fmtKm(D)} here</span>` : ''}${i === cr.placeSel && !cr.options.length && cr.busy ? '<span class="chip">Building loops…</span>' : ''}</span>
+      </span></button>`).join('')}</div>
+    ${cr.places[0]?.estimated ? '<p class="note">Driving times are estimates: the route service did not answer.</p>' : ''}
+    <p class="note" style="margin:6px 0 0">Tap a place to see its loops; “Show 3 more” gives other loops from the same place.</p></div>`;
 }
 async function addCreatedToCalendar(date){
   const v = cr.current;
@@ -2273,6 +2498,8 @@ $('#cSearch').onkeydown = e => { if (e.key === 'Enter') createLoop(); };
 document.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => { cr.mode = b.dataset.cmode; cr.current = null; cr.options = []; renderCreate(); setView('create'); });
 $('#cKm').oninput = e => { cr.km = +e.target.value; $('#cKmOut').textContent = fmtKm(cr.km); };
 $('#cKm').onchange = () => { state.settings.createKm = cr.km; save(); };
+document.querySelectorAll('#cCap input').forEach(x => x.onchange = () => { state.settings.maxDriveMin = +x.value; save(); });
+document.querySelectorAll('#cPref input').forEach(x => x.onchange = () => { state.settings.placePref = x.value; save(); });
 $('#createBtn').onclick = createLoop;
 $('#pickBtn').onclick = () => { setView('map'); toast('Tap the map where the walk should start'); };
 map.on('click', e => {

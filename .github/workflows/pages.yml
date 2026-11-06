@@ -28,7 +28,7 @@ jobs:
 
       - name: Week of the data
         id: week
-        run: echo "key=walk-data-$(date -u +%G-%V)-${{ hashFiles('tools/build_data.py') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=walk-data-$(date -u +%G-%V)-${{ hashFiles('tools/build_data.py', 'tools/walk_grid.py') }}" >> "$GITHUB_OUTPUT"
 
       - name: Reuse this week's walk data
         id: cache
