@@ -219,3 +219,32 @@ Check on the four cases: the loops are identical to step 6, and the bar matches 
 Time: unchanged (4–12 s). The "lead" figure only counts ways and areas tagged for it in OpenStreetMap; in Natuur en Bos forests dogs must be on a lead everywhere outside the off-leash zones, which the card states separately.
 
 Verdict: **kept** (display only, checked against the measurements).
+
+## Step 8: fair start places for the group — kept
+
+What was built:
+
+- **Walking-quality map** (new, made by the weekly data build, `tools/walk_grid.py`): for each square of about 1.1 × 1.05 km, metres of path, small street and road, metres unpaved, water points, knooppunten, and one public parking.
+- **Fair for all** tab in Create, with the distance slider, **Longest drive for anyone** (30 / 45 / 60 min, standard 45) and **Prefer** (Short drive / Balanced / Best nature).
+- **Candidates:** every square with a public parking that everyone who counts can reach within about the limit (straight line × 1.35 as a first filter). Each is rated on its surroundings within D/4 km (1.2–3 km): `0.3 × path share + 0.5 × unpaved share + 0.05 × water + 0.1 × knooppunten − 0.8 × road share − up to 0.3 for a town-dense network`. Places rated under 0.25, or with fewer than 2 × D km of ways around, are left out.
+- **Ride score** = average drive + ½ × longest drive (only for those who count). Rank = ride score − weight × rating (weight 15 / 30 / 60 minutes for Short drive / Balanced / Best nature).
+- The best 12, at least 3 km apart, get **real driving times** (OSRM); places where someone who counts would drive longer than the limit are dropped; the best 5 are shown (A–E) with each home town's time, the longest drive, the Natuur en Bos area name and the town.
+- **"Doesn't mind driving far"** per member: their time is shown in italics, but not counted.
+- The first place's loops are made straight away; if none is within ±10% of the distance, the place says so and the next one is tried. Any place can be tapped at any time; "Show 3 more" gives other loops from the same place.
+- **Not built (yet):** carpools. The personal 15/20/25 km limits still apply to Plan walks; here the driving-time limit counts.
+
+Measured with the test group (3 in Kampenhout, Woluwe, Laeken; Villers-la-Ville ticked "doesn't mind driving far"), balanced, loops with seed 42. "Today" = the top of the Nature area list (nearest to the group's centre, which Villers-la-Ville pulls south): Zoniënwoud.
+
+| | Longest drive (counted) | Ride score | Loops (best 3): % path |
+|---|---|---|---|
+| Today, Zoniënwoud 5 km | 25 min | 35 | 83 · 69 · 63 (step 7) |
+| Step 8, 5 km, place A | 25 min | 25 | 74 · 70 · 57 (knooppunten) |
+| Step 8, 5 km, places B–D | 21–29 min | 24–32 | best per place 72–98 |
+| Step 8, 5 km, place E | 22 min | 31 | no loop within ±10% → flagged |
+| Step 8, 10 km, places A–E | 21–27 min | 24–27 | best per place 62–81, out & back 0–1% |
+
+- **First version of the rating** (path share weighed most) let through two built-up places (Kraainem 5 km: loops 7–32% path; a Vilvoorde edge 10 km: 54–58%). Footways in housing estates count as paths, so the rating now leans on unpaved ground and penalises a town-dense network; both places dropped out and the replacements gave 62–79%.
+- **Best nature** brings Zoniënwoud (rating 0.81, longest 27 min) and Meerdaalwoud (0.88, 33 min) to the top for 5 km.
+- **Time:** finding places 0.2 s (real driving times included); the first place's loops 1–12 s as before. The quality map adds one download of roughly 1 MB, only when the tab is used.
+
+Verdict: **kept**. Compared with today's top suggestion, the five members who count drive about 8–10 minutes less (ride score 24–27 instead of 35) with the same longest drive, and the loops are as green.

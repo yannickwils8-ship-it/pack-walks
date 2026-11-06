@@ -5,7 +5,8 @@ Reads a Belgium OpenStreetMap extract and writes small map squares ("tiles"):
   <out>/paths/<x>_<y>.json  walkable ways, for building trail loops
   <out>/meta/<x>_<y>.json   knooppunten, network links, marked routes, dog places, parkings,
                             villages, and green or built-up areas
-plus <out>/anb.json (Natuur en Bos nature areas and dog zones) and <out>/index.json.
+plus <out>/anb.json (Natuur en Bos nature areas and dog zones), <out>/walkgrid.json (walking
+quality per ~1 km square, see walk_grid.py) and <out>/index.json.
 
 Coordinates are integers of 1e-5 degree (about 1 m), each line stored as differences from the
 previous point to keep files small.
@@ -366,6 +367,13 @@ def main():
         'paths': sorted(m.paths), 'meta': sorted(m.meta),
     })
     print(f'wrote {len(m.paths)} path tiles and {len(m.meta)} meta tiles in {time.time() - t0:.0f}s', flush=True)
+
+    # The walking-quality grid for fair start places (the rest of the data is useful without it)
+    try:
+        import walk_grid
+        print(f'walk grid: {walk_grid.build(out)} squares ({time.time() - t0:.0f}s)', flush=True)
+    except Exception as e:
+        print(f'walk grid failed: {e}', flush=True)
 
 
 if __name__ == '__main__':
