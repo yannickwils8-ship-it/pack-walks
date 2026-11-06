@@ -1885,16 +1885,82 @@ async function gatherOptions(c){
 }
 // The best three that differ from each other and from options shown before: closest to the distance,
 // signposted routes first, places where dogs are banned last
+// Score of a loop (method from the running app; lower = better):
+//   average cost per metre
+//   + 2.5 × share repeated (within ~20 m of a part already walked, more than 150 m from the start)
+//   + 4 × how far the length is off beyond 5%
+//   + 0.12 × crossings + 0.15 × junctions passed a second time (more than 150 m from the start)
+//   + 0.5 × how far the roundness (4π × area / length²) is below 0.3
+//   + 1 when the loop crosses a no-dog area or path (our dog rule: those go last)
+// It applies to every kind of option (trail loop, knooppunten, official route), on its real shape.
+const ptKey = p => Math.round(p[0] * 1e5) * 1e6 + Math.round(p[1] * 1e5);
+function loopScore(v, c){
+  const G = c.area.G, pts = v.pts, D = c.L, s0 = pts[0], links = new Set();
+  let len = 0, cost = 0, twice = 0, prev = ptKey(pts[0]);
+  const visited = new Set([prev]);
+  for (let i = 1; i < pts.length; i++) {
+    const k = ptKey(pts[i]);
+    if (k === prev) continue;   // route shapes stitched from pieces repeat their join points
+    const d = km(P(pts[i - 1]), P(pts[i])), e = (G.get(prev) || []).find(x => x.to === k);
+    len += d;
+    cost += e ? e.cost : d * 2;   // stretches not on the walking map count as an ordinary street
+    links.add(prev < k ? prev + '-' + k : k + '-' + prev);
+    if (visited.has(k) && i < pts.length - 1 && d2(pts[i], s0) >= DEG2_150M) twice++;
+    visited.add(k); prev = k;
+  }
+  // Repeated share: points every 10 m that come within ~20 m of a point passed at least 40 m earlier
+  const rs = densify10(pts), first = new Map();
+  let rep = 0;
+  rs.forEach((p, i) => {
+    const a = Math.round(p[0] / 0.00009), b = Math.round(p[1] / 0.00014);
+    if (d2(p, s0) >= DEG2_150M) {
+      let hit = false;
+      for (let da = -2; da <= 2 && !hit; da++) for (let db = -2; db <= 2 && !hit; db++) {
+        const f = first.get((a + da) * 1e6 + b + db);
+        if (f != null && f < i - 4) hit = true;
+      }
+      if (hit) rep++;
+    }
+    const k = a * 1e6 + b;
+    if (!first.has(k)) first.set(k, i);
+  });
+  // Crossings between stretches that aren't neighbours, found via 50 m squares; roundness via the shoelace formula
+  const cosL = Math.cos(s0[0] * Math.PI / 180), q = pts.map(p => [(p[1] - s0[1]) * 111320 * cosL, (p[0] - s0[0]) * 111320]);
+  const ccw = (a, b, c2) => (c2[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c2[0] - a[0]);
+  const cells = new Map(), CS = 50;
+  let cross = 0, area2 = 0;
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1], b = q[i], tested = new Set();
+    area2 += a[0] * b[1] - b[0] * a[1];
+    for (let x = Math.floor(Math.min(a[0], b[0]) / CS); x <= Math.floor(Math.max(a[0], b[0]) / CS); x++)
+      for (let y = Math.floor(Math.min(a[1], b[1]) / CS); y <= Math.floor(Math.max(a[1], b[1]) / CS); y++) {
+        const key = (x + 50000) * 100000 + y + 50000, list = cells.get(key) || cells.set(key, []).get(key);
+        for (const j of list) {
+          if (j >= i - 1 || tested.has(j) || (j === 1 && i === q.length - 1)) continue;
+          tested.add(j);
+          const c1 = q[j - 1], c2 = q[j], d1 = ccw(a, b, c1), d2_ = ccw(a, b, c2), d3 = ccw(c1, c2, a), d4 = ccw(c1, c2, b);
+          if (((d1 > 0 && d2_ < 0) || (d1 < 0 && d2_ > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) cross++;
+        }
+        list.push(i);
+      }
+  }
+  const repeated = rs.length ? rep / rs.length : 0, off = len ? Math.abs(len - D) / D : 1;
+  const compact = len ? 4 * Math.PI * Math.abs(area2 / 2) / (len * 1000) ** 2 : 0;
+  const score = (len ? cost / len : 9) + 2.5 * repeated + 4 * Math.max(0, off - 0.05) + 0.12 * cross + 0.15 * twice
+    + 0.5 * Math.max(0, 0.3 - compact) + (v.dog?.banned ? 1 : 0);
+  return {score, links, parts:{costPerM:len ? cost / len : null, repeated, off, cross, twice, compact}};
+}
+// The options in order of score, skipping any loop that shares 45% or more of its links with a loop
+// already kept or already shown (either way round, so a short loop inside a longer one also counts)
 function pickOptions(c, pool, shown){
   pool.forEach(v => {
-    v.place = c.place; v.cells = v.cells || cellsOf(v.pts);
-    v.dog = v.dog || dogInfo(v.pts, c.area.dog); v.diff = (v.len - c.L) / c.L;
+    v.place = c.place; v.dog = v.dog || dogInfo(v.pts, c.area.dog); v.diff = (v.len - c.L) / c.L;
+    if (v.score == null) Object.assign(v, loopScore(v, c));
   });
-  const rank = v => Math.abs(v.diff) * 100 - (v.kind === 'route' ? 10 : v.kind === 'loop' ? 6 : 0)
-    + (v.dog.banned ? 200 : 0) - (v.dog.offLeash ? 4 : 0) - (v.wide || 0) * 4;
+  const shares = (v, x) => { let n = 0; v.links.forEach(l => { if (x.links.has(l)) n++; }); return v.links.size ? n / v.links.size : 0; };
   const out = [];
-  for (const v of pool.filter(v => !shown.includes(v)).sort((a, b) => rank(a) - rank(b))) {
-    if ([...out, ...shown].some(x => overlap(x.cells, v.cells) > 0.6)) continue;
+  for (const v of pool.filter(v => !shown.includes(v)).sort((a, b) => a.score - b.score)) {
+    if ([...out, ...shown].some(x => shares(v, x) >= 0.45 || shares(x, v) >= 0.45)) continue;
     out.push(v);
     if (out.length === 3) break;
   }

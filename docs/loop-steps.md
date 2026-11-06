@@ -119,3 +119,44 @@ What was learned while building it:
 - **Building the junction map** was sped up by counting neighbours directly.
 
 Verdict: **not published on its own** (2–3× slower for a modest gain). Kept on the branch `experiment/step4-generator`, to be measured together with step 5; if steps 4 + 5 together don't clearly beat step 2, both go.
+
+
+## Step 5: score and selection (measured together with step 4) — kept
+
+What changed:
+
+- **Every option gets the method's score** (lower is better): average cost per metre + 2.5 × repeated share (within ~20 m of a part already walked, more than 150 m from the start) + 4 × distance off beyond 5% + 0.12 × crossings + 0.15 × junctions passed twice + 0.5 × roundness shortfall below 0.3. Our dog rule adds 1 when a loop crosses a no-dog area or path. The same score applies to trail loops, knooppunten loops and official routes, on their real shape.
+- **Selection:** options in order of score, skipping any that shares 45% or more of its links with an option already kept or already shown (either way round).
+- **"Show 3 more"** uses the same rule, so it never shows a loop again or one too close to an earlier one.
+
+Results (one run per case; the generator has no randomness):
+
+| Case | Options: km (off target, out & back, roundness) | Time |
+|---|---|---|
+| A Zoniënwoud 5 km | 5.17 (+3%, 2%, 0.60) · 4.82 (−4%, 1%, 0.49) · 5.17 (+3%, 1%, 0.60) | 7 s |
+| B Meerdaalwoud 10 km | 10.40 (+4%, 0%, 0.48) · 10.28 (+3%, 0%, 0.52) · 10.05 (0%, 0%, 0.28) | 4 s |
+| C Woluwe 5 km | 5.18 (+4%, 10%, 0.42) · 4.78 (−4%, 12%, 0.14) · 5.22 (+4%, 11%, 0.22) | 5 s |
+| D Laeken 10 km | 10.48 (+5%, 17%, 0.38) · 9.48 (−5%, 15%, 0.46) · 9.70 (−3%, 17%, 0.34) | 12 s |
+
+Compared with step 2 (live until now):
+
+| | Step 2 | Steps 4 + 5 |
+|---|---|---|
+| Out & back, Laeken | 21–26% (avg 24%) | **15–17% (avg 16%)** |
+| Out & back, Woluwe | 8–19% (avg 14%) | **10–12% (avg 11%)** |
+| Out & back, forests | 1–5% | **0–2%** |
+| Junctions passed twice | 0–16 | **0** |
+| Unpaved, Laeken | avg 16% | **avg 25%** |
+| Distance off target | −4% to +7% | −5% to +5% |
+| Roundness, Woluwe | 0.18–0.44 | 0.14–0.42 |
+| Time | 4–8 s | 4–12 s |
+
+"Show 3 more" in Laeken: four rounds gave 12 different loops; no two share more than 45% of their links.
+
+Side effects to handle later:
+
+- **Meerdaalwoud no longer shows a knooppunten loop** among the 3: it scores lower because 13% of it is on roads, and the walk from the parking isn't counted yet. Step 6 handles knooppunten.
+- **Laeken takes about 5 s longer** than before.
+- **One Woluwe option is thin** (roundness 0.14); the method's roundness penalty is small by design.
+
+Verdict: **steps 4 and 5 kept**. Out & back in town is down by about a third (Laeken 24% → 16%), loops never pass a junction twice, and town loops use more unpaved ground.
