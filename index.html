@@ -130,6 +130,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .stat span{display:block;font-size:12px;color:var(--muted)}
 .junctions{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .junctions .kp{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 6px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:700 13px var(--body);font-variant-numeric:tabular-nums}
+.junctions .kp.park{border-radius:6px;background:#1c7ed6;color:#fff}
 .junctions .arrow{color:var(--muted);font-size:13px}
 .section-label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .rsvp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -960,7 +961,7 @@ function shareText(w){
   const lines = [`🐕 Group walk: ${prettyDate(w.date)}, ${w.time}`,
     `🌲 ${walkTitle(w)} · ${w.len} km`];
   const j = junctions(w);
-  if (j) lines.push(`🔢 Follow junctions: ${j.join(' → ')}`);
+  if (j) lines.push(`🔢 Follow junctions: ${junctionText(j, w.access)}`);
   if (w.offLeash) lines.push(`🐾 Off-leash zone on the way: ${zoneName(w.offLeash)}`);
   lines.push(`📍 Start: https://www.google.com/maps/search/?api=1&query=${w.start.lat},${w.start.lon}`);
   if (w.wx) lines.push(`${wxIcon(w.wx.code)} ${w.wx.tmin}–${w.wx.tmax}°C, gusts ${w.wx.gust} km/h`);
@@ -1114,7 +1115,7 @@ function heroHTML(w){
     <div>
       <div class="walk-title">${esc(walkTitle(w))}</div>
       ${w.offLeash ? `<div class="chips" style="margin-top:8px"><span class="chip good">Off-leash zone on the way: ${esc(zoneName(w.offLeash))}</span></div>` : ''}
-      ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
+      ${j ? junctionPills(j, w.access) : ''}
     </div>
     <div class="stats">${stats.map(([k, v, sub]) => `<div class="stat"><small>${k}</small><b>${v}</b><span>${esc(sub)}</span></div>`).join('')}</div>
     ${rsvp}
@@ -1855,6 +1856,22 @@ async function generateLoops(c, shift = 0){
   }
   return out;
 }
+// Walking route from the start (next to the parking) to a knooppunt, on the junction map
+function accessRoute(area, J, sj, kp){
+  const t = nearestJunction(area, J, {lat:kp.lat, lon:kp.lon}, 0.3, sj.comp);
+  if (t == null) return null;
+  const leg = loopLeg(area, J, sj.s0, t, {corridor:new Set(), firstLink:-1, start:area.coords.get(sj.s0)});
+  if (!leg) return null;
+  const pts = leg.nodes.map(id => area.coords.get(id));
+  return {pts, len:lineKm(pts)};
+}
+// Knooppunten sequence as pills, with P for the parking when the walk starts away from the first knooppunt
+const junctionPills = (j, access) => {
+  const seq = access > 0.05 ? ['P', ...j, 'P'] : j;
+  return `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${seq.map((r, i) =>
+    `${i ? '<span class="arrow">→</span>' : ''}<span class="kp${r === 'P' && access > 0.05 && (i === 0 || i === seq.length - 1) ? ' park' : ''}">${esc(r)}</span>`).join('')}</div>`;
+};
+const junctionText = (j, access) => (access > 0.05 ? ['Parking', ...j, 'Parking'] : j).join(' → ');
 // ---------- three options per place ----------
 const OPT_COLORS = ['#d9480f', '#1c7ed6', '#7048e8'];
 const KIND_LABEL = {route:'Official route', loop:'Knooppunten loop', trail:'Trail loop'};
@@ -1874,11 +1891,25 @@ async function gatherOptions(c){
     const rot = [...pts.slice(bi), ...pts.slice(1, bi + 1)];
     pool.push({kind:'route', name:r.name, start:{lat:rot[0][0], lon:rot[0][1]}, len, pts:rot});
   }
+  // Knooppunten: numbered cycles from the knooppunten nearest the parking (up to 3 within 1.5 km), with
+  // the walk there and back counted, keeping only cycles whose total is within ±10% of the distance
+  c.knp = {nearby:0, fitting:0};
   if (area.kps.length && area.segs.length) {
-    const g = buildGraph(area.kps, area.segs);
-    const starts = area.kps.filter(n => g.adj.get(n.id)?.length && km(n, origin) < 2).sort((a, b) => km(a, origin) - km(b, origin)).slice(0, 5);
-    for (const n of starts) for (const l of findLoops(g, n.id, Math.max(2, L * 0.6), L * 1.5).slice(0, 12))
-      pool.push({kind:'loop', name:'Knooppunten ' + loopRefsG(g, l, n.id), start:{lat:n.lat, lon:n.lon}, len:l.len, pts:loopPointsG(g, l)});
+    const g = buildGraph(area.kps, area.segs), J = junctionMap(area);
+    c.startJ = c.startJ || startJunction(area, J, origin);
+    const near = area.kps.filter(n => g.adj.get(n.id)?.length && km(n, origin) < 1.5).sort((a, b) => km(a, origin) - km(b, origin)).slice(0, 3);
+    c.knp.nearby = near.length;
+    for (const n of near) {
+      const acc = c.startJ ? accessRoute(area, J, c.startJ, n) : null;
+      if (!acc) continue;
+      const lo = 0.9 * L - 2 * acc.len, hi = 1.1 * L - 2 * acc.len;
+      if (hi < 1) continue;
+      for (const l of findLoops(g, n.id, Math.max(1, lo), hi).slice(0, 25)) {
+        const pts = [...acc.pts, ...loopPointsG(g, l), ...[...acc.pts].reverse().slice(1)];
+        pool.push({kind:'loop', name:'Knooppunten ' + loopRefsG(g, l, n.id), start:P(acc.pts[0]), len:lineKm(pts), pts, access:acc.len});
+        c.knp.fitting++;
+      }
+    }
   }
   pool.push(...await generateLoops(c));
   return pool;
@@ -1964,8 +1995,16 @@ function pickOptions(c, pool, shown){
     out.push(v);
     if (out.length === 3) break;
   }
+  // Optionally keep the last place for the best signposted knooppunten loop that fits the distance
+  if (SIGNPOSTED_SLOT && !out.some(v => v.kind === 'loop')) {
+    const keep = out.slice(0, 2);
+    const k = pool.filter(v => v.kind === 'loop' && !shown.includes(v) && Math.abs(v.diff) <= 0.1).sort((a, b) => a.score - b.score)
+      .find(v => ![...keep, ...shown].some(x => shares(v, x) >= 0.45 || shares(x, v) >= 0.45));
+    if (k) return [...keep, k];
+  }
   return out;
 }
+let SIGNPOSTED_SLOT = true;   // with a group of dogs, a signposted route you can follow without a phone is worth a place
 const cStatus = t => { const el = $('#createStatus'); el.hidden = !t; el.textContent = t || ''; };
 async function createLoop(){
   if (cr.busy) return;
@@ -2063,7 +2102,7 @@ const createdTitle = v => (v.kind === 'route' ? v.name : KIND_LABEL[v.kind]) + (
 function createdShare(v){
   const j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
   return [`🐕 Dog walk: ${createdTitle(v)}`, `🥾 Loop of ${fmtKm(v.len)} (about ${fmtDuration(v.len / 4 * 60)})`,
-    ...(j ? [`🔢 Follow junctions: ${j.join(' → ')}`] : []),
+    ...(j ? [`🔢 Follow junctions: ${junctionText(j, v.access)}`] : []),
     `📍 Start: https://www.google.com/maps/search/?api=1&query=${v.start.lat.toFixed(5)},${v.start.lon.toFixed(5)}`].join('\n');
 }
 function renderCreate(){
@@ -2089,6 +2128,7 @@ function renderCreate(){
     o.dog.water ? `<span class="chip">💧 ${o.dog.water} water point${o.dog.water > 1 ? 's' : ''}</span>` : '',
     (o.wide || 0) >= 0.5 ? '<span class="chip good">Wide tracks, easy with a group</span>' : ''].join('');
   box.innerHTML = `<div class="view">
+    ${cr.ctx.knp?.nearby && !cr.ctx.knp.fitting ? `<div class="notice">No signposted knooppunten loop of about ${fmtKm(L0)} starts near here, so these are trail loops along paths and tracks.</div>` : ''}
     ${cr.options.some(close) ? '' : `<div class="notice">There's no loop of exactly ${fmtKm(L0)} here. These are the closest options.</div>`}
     <div>
       <div class="section-label">${cr.options.length} option${cr.options.length > 1 ? 's' : ''} ${cr.ctx.place ? 'in ' + esc(cr.ctx.place) : 'from your point'}</div>
@@ -2102,7 +2142,7 @@ function renderCreate(){
     <article class="hero"><div class="hero-body">
       <div><span class="eyebrow">Option ${cr.sel + 1} · ${v.kind === 'route' ? 'Official signposted route' : v.kind === 'loop' ? 'Signposted knooppunten' : 'Along paths and forest tracks'}</span>
         <div class="walk-title" style="margin-top:4px">${esc(createdTitle(v))}</div>
-        ${j ? `<div class="junctions" style="margin-top:8px" aria-label="Junctions to follow">${j.map((r, i) => `${i ? '<span class="arrow">→</span>' : ''}<span class="kp">${esc(r)}</span>`).join('')}</div>` : ''}
+        ${j ? junctionPills(j, v.access) : ''}
       </div>
       ${v.kind === 'trail' ? '<p class="note" style="margin:0">Not signposted. Follow it on your phone, or download the GPX for a walking app.</p>' : ''}
       ${v.kind === 'route' ? '<p class="note" style="margin:0">An official marked route: follow its signs. It starts here at the point closest to where you chose.</p>' : ''}
@@ -2140,7 +2180,7 @@ async function addCreatedToCalendar(date){
     ms.forEach((m, i) => dists[m.id] = rows && rows[i][0] != null ? rows[i][0] : km(m, v.start) * ROAD);
     const w = {id:uid(), date, time, status:'proposed', reason:'', name:v.name, kind:v.kind, place:v.place, key:'custom:' + uid(), custom:true,
       start:v.start, len:+v.len.toFixed(1), pts:v.pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]),
-      natureShare:null, forestShare:0, wx, dists, members:ms.map(m => m.id)};
+      natureShare:null, forestShare:0, wx, dists, members:ms.map(m => m.id), access:v.access || 0};
     const old = state.walks.find(x => x.date === date);
     if (old) { delete state.rsvp[old.id]; state.walks = state.walks.filter(x => x !== old); }
     state.walks.push(w); selectedId = w.id; save();

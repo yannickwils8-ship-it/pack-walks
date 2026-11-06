@@ -160,3 +160,30 @@ Side effects to handle later:
 - **One Woluwe option is thin** (roundness 0.14); the method's roundness penalty is small by design.
 
 Verdict: **steps 4 and 5 kept**. Out & back in town is down by about a third (Laeken 24% → 16%), loops never pass a junction twice, and town loops use more unpaved ground.
+
+
+## Step 6: knooppunten with the walk from the parking — kept (with a reserved place)
+
+What changed:
+
+- **Cycles start from the knooppunten nearest the parking** (up to 3 within 1.5 km). The walk from the parking to the knooppunt and back is now included, and only cycles whose **total** is within ±10% of the distance are kept (before: 60–150% of the distance, without the access walk).
+- **The access walk is routed on the walking map** and is part of the loop's shape, so the GPX and the map show it too.
+- **Knooppunten loops get the same score** as every other option, on their real shape.
+- **The sequence shows the parking:** "P → 18 → 17 → … → 18 → P" on the card, "Parking → 18 → … → Parking" in the WhatsApp text.
+- **When knooppunten are nearby but no cycle fits the distance**, the card says: "No signposted knooppunten loop of about X km starts near here, so these are trail loops along paths and tracks."
+
+Two variants were measured:
+
+- **M, method only:** the score decides all three places.
+- **S, reserved place:** when no knooppunten loop makes the top three but one fits the distance (±10%), the best one takes the third place.
+
+Results: Zoniënwoud, Woluwe and Laeken have no knooppunten within 1.5 km of the start, so nothing changes there. Meerdaalwoud 10 km has 3 knooppunten nearby and 75 fitting cycles:
+
+- **M:** three trail loops (as in step 5). The best knooppunten loop scores 2.46 against 0.95 for the best trail loop. Its own route is pleasant (cost 1.01 per metre), but the 605 m from the parking to knooppunt 18 is walked there and back: 8 junctions passed twice and 10% repeated.
+- **S:** the third option becomes P → 18 → 17 → 16 → 15 → 604 → 124 → 123 → 110 → 109 → 108 → 100 → 19 → 18 → P, 10.38 km (+4%), 93% paths, 70% unpaved, 6% out & back (the access walk), roundness 0.36. It replaces a trail loop of 10.05 km with 0% out & back and roundness 0.28.
+
+Compared with the knooppunten loop shown before step 5 (10.10 km, 67% paths, 13% roads, start 400–780 m from the parking not counted), the new one is on better paths (93%, 4% roads) and its distance is honest.
+
+Checked: P pills on the card and in the calendar, WhatsApp text, and the "no signposted loop" message. At 3 km two cycles fit in Meerdaalwoud.
+
+Verdict: **kept, with the reserved place (S)**. With 5–10 dogs, a signposted route that can be followed without a phone is worth a little retracing at the start. It can be switched off with `SIGNPOSTED_SLOT = false`.
