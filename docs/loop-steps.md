@@ -187,3 +187,35 @@ Compared with the knooppunten loop shown before step 5 (10.10 km, 67% paths, 13%
 Checked: P pills on the card and in the calendar, WhatsApp text, and the "no signposted loop" message. At 3 km two cycles fit in Meerdaalwoud.
 
 Verdict: **kept, with the reserved place (S)**. With 5–10 dogs, a signposted route that can be followed without a phone is worth a little retracing at the start. It can be switched off with `SIGNPOSTED_SLOT = false`.
+
+
+## Step 7: information along the loop — kept
+
+What changed (no effect on which loops are made or chosen):
+
+- **Path / small street / road bar** on every option and calendar walk, with the method's definitions: path = path, track, bridleway, steps or any unpaved way; road = tertiary to trunk; small street = the rest; "other" = parts not on the walking map.
+- **Along the loop:** water for the dogs (where the route passes within ~30 m of a stream, river or pond, counted as separate spots when 300 m apart), drinking water and public toilets within ~60 m, and how far a lead is needed (`dog=leashed` ways and nature reserves). When there's no stream or pond on the way, the card says "bring water".
+- **On the map:** water-for-dogs spots and toilets along the selected loop; the legend shows drinking water and dog water separately.
+- **Calendar walks** keep this information, and the WhatsApp text adds a line such as "🐾 Water for the dogs at 10 spots · lead for about 0.6 km".
+- **GPX files** carry the OpenStreetMap credit and licence.
+
+Check on the four cases: the loops are identical to step 6, and the bar matches the measuring script in all 12 options.
+
+| Case | Option | Path / street / road | Dog water spots | Drinking water | Toilets | Lead |
+|---|---|---|---|---|---|---|
+| A Zoniënwoud 5 km | 1 | 83 / 17 / 0 | 5 | 0 | 0 | 0.24 km |
+| | 2 | 69 / 31 / 0 | 5 | 0 | 0 | — |
+| | 3 | 63 / 37 / 0 | 1 | 0 | 0 | — |
+| B Meerdaalwoud 10 km | 1 | 97 / 3 / 0 | 2 | 1 | 0 | 0.26 km |
+| | 2 | 97 / 3 / 0 | 1 | 0 | 1 | 0.55 km |
+| | 3 knooppunten | 93 / 3 / 4 (+1% other) | 7 | 2 | 1 | — |
+| C Woluwe 5 km | 1 | 24 / 76 / 0 | 7 | 2 | 1 | — |
+| | 2 | 21 / 79 / 0 | 6 | 2 | 1 | — |
+| | 3 | 21 / 79 / 0 | 5 | 1 | 0 | — |
+| D Laeken 10 km | 1 | 28 / 72 / 0 | 4 | 2 | 0 | — |
+| | 2 | 18 / 82 / 0 | 10 | 2 | 4 | — |
+| | 3 | 33 / 67 / 0 | 10 | 4 | 4 | — |
+
+Time: unchanged (4–12 s). The "lead" figure only counts ways and areas tagged for it in OpenStreetMap; in Natuur en Bos forests dogs must be on a lead everywhere outside the off-leash zones, which the card states separately.
+
+Verdict: **kept** (display only, checked against the measurements).

@@ -131,6 +131,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .junctions{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .junctions .kp{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 6px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:700 13px var(--body);font-variant-numeric:tabular-nums}
 .junctions .kp.park{border-radius:6px;background:#1c7ed6;color:#fff}
+.mixbar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface-2);margin-top:4px}
+.mixbar i{display:block;height:100%}
+.mixlegend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin-top:6px}
+.mixlegend span{display:flex;align-items:center;gap:5px}
+.mixlegend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.wc-pin span{display:block;padding:1px 4px;border-radius:4px;background:#495057;color:#fff;font:700 10px var(--body);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.lg-dogwater{width:10px;height:10px;border-radius:50%;background:#0b7285;border:2px solid #fff;box-shadow:0 0 0 1px #0b7285}
 .junctions .arrow{color:var(--muted);font-size:13px}
 .section-label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .rsvp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -949,7 +956,7 @@ function toast(msg, isError){
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3500);
 }
 function gpx(name, pts){
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Pack Walks" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(name)}</name><trkseg>` +
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Pack Walks" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${esc(name)}</name><copyright author="OpenStreetMap contributors"><license>https://opendatacommons.org/licenses/odbl/</license></copyright><link href="https://www.openstreetmap.org/copyright"><text>Map data © OpenStreetMap contributors</text></link></metadata><trk><name>${esc(name)}</name><trkseg>` +
     pts.map(p => `<trkpt lat="${p[0]}" lon="${p[1]}"/>`).join('') + '</trkseg></trk></gpx>';
 }
 function download(name, text, type){
@@ -963,6 +970,7 @@ function shareText(w){
   const j = junctions(w);
   if (j) lines.push(`🔢 Follow junctions: ${junctionText(j, w.access)}`);
   if (w.offLeash) lines.push(`🐾 Off-leash zone on the way: ${zoneName(w.offLeash)}`);
+  if (w.info) lines.push(infoLine(w.info));
   lines.push(`📍 Start: https://www.google.com/maps/search/?api=1&query=${w.start.lat},${w.start.lon}`);
   if (w.wx) lines.push(`${wxIcon(w.wx.code)} ${w.wx.tmin}–${w.wx.tmax}°C, gusts ${w.wx.gust} km/h`);
   lines.push('Answer in Pack Walks: Join / Maybe / Can\'t');
@@ -1117,6 +1125,7 @@ function heroHTML(w){
       ${w.offLeash ? `<div class="chips" style="margin-top:8px"><span class="chip good">Off-leash zone on the way: ${esc(zoneName(w.offLeash))}</span></div>` : ''}
       ${j ? junctionPills(j, w.access) : ''}
     </div>
+    ${w.info ? infoHTML(w.info) : ''}
     <div class="stats">${stats.map(([k, v, sub]) => `<div class="stat"><small>${k}</small><b>${v}</b><span>${esc(sub)}</span></div>`).join('')}</div>
     ${rsvp}
     <div><div class="section-label">Who's coming</div><div class="who">
@@ -1526,7 +1535,8 @@ async function loadAreaTiles(S, R){
     water: mergeMeta(meta, 'wa', joinKey).map(it => [it[0] / QD, it[1] / QD]),
   };
   dog.banLines.forEach(l => l.forEach(p => dog.banCells.add(fineCell(p))));
-  return {coords, G, trail, kps:kpsFrom(meta), segs:segsFrom(meta), routes:routesFrom(meta), dog};
+  return {coords, G, trail, kps:kpsFrom(meta), segs:segsFrom(meta), routes:routesFrom(meta), dog,
+    toilets:mergeMeta(meta, 'wc', joinKey).map(it => [it[0] / QD, it[1] / QD]), waterNear:p => waterCells.size > 0 && nearWater(p, p)};
 }
 async function loadAreaLive(S, R){
   const a = `(around:${Math.round(R * 1000)},${S.lat.toFixed(5)},${S.lon.toFixed(5)})`;
@@ -2069,7 +2079,7 @@ function fitCreate(onlySelected){
 }
 const LEGEND_PLAN = '<span><i class="lg-home"></i>Home town</span><span><i class="lg-route"></i>Walk</span><span><i class="lg-drive"></i>Drive to start</span><span><i class="lg-zone"></i>Off-leash zone</span>';
 const LEGEND_CREATE = `<span><i class="lg-route"></i>1</span><span><i class="lg-route" style="background:${OPT_COLORS[1]}"></i>2</span><span><i class="lg-route" style="background:${OPT_COLORS[2]}"></i>3</span>` +
-  '<span><i class="lg-zone"></i>Off-leash zone</span><span><i class="lg-lead"></i>Lead only</span><span><i class="lg-ban"></i>No dogs</span><span><i class="lg-water"></i>Water</span>';
+  '<span><i class="lg-zone"></i>Off-leash zone</span><span><i class="lg-lead"></i>Lead only</span><span><i class="lg-ban"></i>No dogs</span><span><i class="lg-water"></i>Drinking water</span><span><i class="lg-dogwater"></i>Dog water</span>';
 function drawCreate(){
   const d = cr.ctx?.area.dog;
   if (cr.ctx?.outline && cr.options.length)
@@ -2097,12 +2107,66 @@ function drawCreate(){
   L.polyline(v.pts, {color:'#ffffff', weight:9, opacity:.85, interactive:false}).addTo(walkLayer);
   L.polyline(v.pts, {color:OPT_COLORS[cr.sel], weight:5, bubblingMouseEvents:false}).bindTooltip(`Option ${cr.sel + 1}: ${fmtKm(v.len)}`).addTo(walkLayer);
   L.marker([v.start.lat, v.start.lon], {icon:L.divIcon({className:'start-pin', html:'<span>Start</span>', iconSize:[50,24], iconAnchor:[25,30]}), zIndexOffset:1000}).addTo(walkLayer);
+  // Along the selected loop: where the dogs can drink from a stream or pond, and public toilets
+  (v.info?.dogWater || []).forEach(p => L.circleMarker(p, {radius:6, color:'#ffffff', weight:2, fillColor:'#0b7285', fillOpacity:1}).bindTooltip('Water for the dogs (stream or pond)').addTo(walkLayer));
+  (v.info?.toilets || []).forEach(p => L.marker(p, {icon:L.divIcon({className:'wc-pin', html:'<span>WC</span>', iconSize:[24,16], iconAnchor:[12,8]})}).bindTooltip('Public toilet').addTo(walkLayer));
 }
 const createdTitle = v => (v.kind === 'route' ? v.name : KIND_LABEL[v.kind]) + (v.place && v.kind !== 'route' ? ' · ' + v.place : '');
+// Along the loop (method): what it's made of (path = path, track, bridleway, steps or any unpaved way;
+// road = tertiary to trunk; small street = the rest), how far a lead is needed (dog=leashed ways and
+// nature reserves), and drinking water, toilets and water for the dogs near the route
+function loopInfo(v, area){
+  const G = area.G, pts = v.pts, lb = bbOf(pts);
+  const leadNear = area.dog.leash.filter(a => !(a.bb[2] < lb[0] || a.bb[0] > lb[2] || a.bb[3] < lb[1] || a.bb[1] > lb[3]));
+  const bar = {path:0, street:0, road:0, other:0};
+  let len = 0, leadKm = 0, prev = ptKey(pts[0]);
+  for (let i = 1; i < pts.length; i++) {
+    const k = ptKey(pts[i]);
+    if (k === prev) continue;
+    const a = pts[i - 1], b = pts[i], d = km(P(a), P(b)), e = (G.get(prev) || []).find(x => x.to === k);
+    len += d;
+    if (!e) bar.other += d;
+    else if (PATH_TYPES.test(e.hw) || (e.f & 2)) bar.path += d;
+    else if (/^(trunk|primary|secondary|tertiary)$/.test(e.hw)) bar.road += d;
+    else bar.street += d;
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    if ((e && (e.f & 16)) || leadNear.some(z => mid[0] >= z.bb[0] && mid[0] <= z.bb[2] && mid[1] >= z.bb[1] && mid[1] <= z.bb[3] && inArea(mid, z))) leadKm += d;
+    prev = k;
+  }
+  // Within ~60 m of the route: the route's ~10 m squares, searched 6 squares around
+  const dense = densify10(pts), cells = new Set(dense.map(c10)), within60 = q => near10(cells, q, 6);
+  // Water for the dogs: places where the route passes within ~30 m of a stream, river or pond,
+  // counted as separate spots when at least 300 m apart
+  const dogWater = [], apart = (0.3 / 111.32) ** 2;
+  if (area.waterNear) for (const p of dense) if (area.waterNear(p) && !dogWater.some(q => d2(q, p) < apart)) dogWater.push(p);
+  return {len, bar, leadKm, water:area.dog.water.filter(within60), toilets:(area.toilets || []).filter(within60), dogWater};
+}
+const infoCount = x => Array.isArray(x) ? x.length : (x || 0);
+// The path / small street / road bar and the useful-spots chips; works on full info or on stored counts
+function infoHTML(info){
+  const pct = x => Math.round(x / (info.len || 1) * 100);
+  const parts = [['Path', info.bar.path, '#2f9e44'], ['Small street', info.bar.street, '#868e96'], ['Road', info.bar.road, '#e8590c'], ['Other', info.bar.other, '#ced4da']]
+    .filter(p => pct(p[1]) > 0);
+  const nDog = infoCount(info.dogWater), nWater = infoCount(info.water), nWc = infoCount(info.toilets);
+  const chips = [
+    nDog ? `<span class="chip good">🐾 Water for the dogs at ${nDog} spot${nDog > 1 ? 's' : ''}</span>` : '<span class="chip warn">No stream or pond on the way: bring water</span>',
+    nWater ? `<span class="chip">💧 ${nWater} drinking water</span>` : '',
+    nWc ? `<span class="chip">🚻 ${nWc} toilet${nWc > 1 ? 's' : ''}</span>` : '',
+    info.leadKm >= 0.1 ? `<span class="chip warn">Lead required for about ${fmtKm(info.leadKm)}</span>` : ''].join('');
+  return `<div>
+    <div class="mixbar" role="img" aria-label="${parts.map(p => p[0] + ' ' + pct(p[1]) + '%').join(', ')}">${parts.map(p => `<i style="width:${pct(p[1])}%;background:${p[2]}"></i>`).join('')}</div>
+    <div class="mixlegend">${parts.map(p => `<span><i style="background:${p[2]}"></i>${p[0]} ${pct(p[1])}%</span>`).join('')}</div>
+    <div class="chips" style="margin-top:8px">${chips}</div></div>`;
+}
+const infoLine = info => {
+  const n = infoCount(info.dogWater);
+  return `🐾 ${n ? `Water for the dogs at ${n} spot${n > 1 ? 's' : ''}` : 'No stream or pond on the way: bring water'}${info.leadKm >= 0.1 ? ` · lead for about ${fmtKm(info.leadKm)}` : ''}`;
+};
 function createdShare(v){
   const j = v.kind === 'loop' ? v.name.replace('Knooppunten ', '').split(' → ') : null;
   return [`🐕 Dog walk: ${createdTitle(v)}`, `🥾 Loop of ${fmtKm(v.len)} (about ${fmtDuration(v.len / 4 * 60)})`,
     ...(j ? [`🔢 Follow junctions: ${junctionText(j, v.access)}`] : []),
+    ...(v.info ? [infoLine(v.info)] : []),
     `📍 Start: https://www.google.com/maps/search/?api=1&query=${v.start.lat.toFixed(5)},${v.start.lon.toFixed(5)}`].join('\n');
 }
 function renderCreate(){
@@ -2144,6 +2208,7 @@ function renderCreate(){
         <div class="walk-title" style="margin-top:4px">${esc(createdTitle(v))}</div>
         ${j ? junctionPills(j, v.access) : ''}
       </div>
+      ${infoHTML(v.info || (v.info = loopInfo(v, cr.ctx.area)))}
       ${v.kind === 'trail' ? '<p class="note" style="margin:0">Not signposted. Follow it on your phone, or download the GPX for a walking app.</p>' : ''}
       ${v.kind === 'route' ? '<p class="note" style="margin:0">An official marked route: follow its signs. It starts here at the point closest to where you chose.</p>' : ''}
       <p class="note" style="margin:0">In Natuur en Bos areas dogs stay on a lead and on the paths, except inside the marked off-leash zones. Elsewhere rules differ, so check the signs at the entrance.</p>
@@ -2180,7 +2245,8 @@ async function addCreatedToCalendar(date){
     ms.forEach((m, i) => dists[m.id] = rows && rows[i][0] != null ? rows[i][0] : km(m, v.start) * ROAD);
     const w = {id:uid(), date, time, status:'proposed', reason:'', name:v.name, kind:v.kind, place:v.place, key:'custom:' + uid(), custom:true,
       start:v.start, len:+v.len.toFixed(1), pts:v.pts.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]),
-      natureShare:null, forestShare:0, wx, dists, members:ms.map(m => m.id), access:v.access || 0};
+      natureShare:null, forestShare:0, wx, dists, members:ms.map(m => m.id), access:v.access || 0,
+      info:(i => ({len:i.len, bar:i.bar, leadKm:i.leadKm, water:i.water.length, toilets:i.toilets.length, dogWater:i.dogWater.length}))(v.info || loopInfo(v, cr.ctx.area))};
     const old = state.walks.find(x => x.date === date);
     if (old) { delete state.rsvp[old.id]; state.walks = state.walks.filter(x => x !== old); }
     state.walks.push(w); selectedId = w.id; save();
